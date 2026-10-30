@@ -182,3 +182,5 @@
   .modal, .stage, .stageText, .stageText b, .stageText:has(b) small { animation: none; }
 }
 .more { list-style: none; margin-left: -20px; font-size: 0.8rem; }
+
+.badge.hurt, .status .hurt { color: #e5534b; }

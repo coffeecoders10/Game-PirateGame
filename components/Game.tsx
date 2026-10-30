@@ -101,6 +101,7 @@ export function Game() {
           connected={snap.connected}
           onRoll={() => client.roll()}
           onConfirm={(actions) => client.confirm(actions)}
+          onThrow={(to) => client.throwKey(to)}
           onAgain={() => client.playAgain()}
           onLeave={leave}
         />

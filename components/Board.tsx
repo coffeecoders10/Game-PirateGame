@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { COAST_PATH } from "@/lib/coast";
 import { BOARD_H, BOARD_W, COLS, GREEN_TILES, HARBOURS, LAND, ROWS, TILE_COUNT, TILE_W, dist, hexPath, tileCenter, tileName } from "@/lib/map";
-import { isActive, SEATS, type GameState, type LogEntry } from "@/lib/rules";
+import { MAX_HP, LOW_HP, isActive, SEATS, type GameState, type LogEntry } from "@/lib/rules";
 import { Glyph, ItemDefs } from "./ItemIcon";
 import { TokenShape, initial } from "./Token";
 import styles from "./Board.module.css";
@@ -18,9 +18,11 @@ type Props = {
   range: number | null; // weapon radius being aimed (tints tiles)
   ghost: number[] | null; // tiles your planned moves pass through; drawn as a see-through pirate
   targets: string[]; // pirates that can be hit with the selected weapon
+  throwTo: number[]; // tiles a knocked-out pirate can hurl their key to
   fx: LogEntry | null; // newest event worth animating
   onStep: (to: number) => void;
   onTarget: (id: string) => void;
+  onThrow: (to: number) => void;
 };
 
 const SIZE = Math.max(BOARD_W, BOARD_H);
@@ -191,7 +193,7 @@ function Effect({ fx }: { fx: LogEntry }) {
   );
 }
 
-export const Board = memo(function Board({ game, meId, view, steps, range, ghost, targets, fx, onStep, onTarget }: Props) {
+export const Board = memo(function Board({ game, meId, view, steps, range, ghost, targets, throwTo, fx, onStep, onTarget, onThrow }: Props) {
   const box = useGlide(view);
   const me = game.players.find((p) => p.id === meId);
   const seated = game.players.filter(isActive);
@@ -207,6 +209,10 @@ export const Board = memo(function Board({ game, meId, view, steps, range, ghost
     const k = `${it.pos}-${it.kind}`;
     stacks.set(k, { pos: it.pos, kind: it.kind, count: (stacks.get(k)?.count ?? 0) + 1 });
   }
+
+  // Gear that is being carried returns to the tile it came from once used up: show a faint shadow there.
+  const shadows = new Map<string, { pos: number; kind: GameState["items"][number]["kind"] }>();
+  for (const p of seated) for (const l of p.loans) shadows.set(`${l.home}-${l.kind}`, { pos: l.home, kind: l.kind });
 
   return (
     <svg
@@ -229,6 +235,16 @@ export const Board = memo(function Board({ game, meId, view, steps, range, ghost
       ))}
       {game.chest >= 0 && <Chest i={game.chest} />}
 
+      {[...shadows.values()].map((s) => {
+        const { x, y } = tileCenter(s.pos);
+        return (
+          <g key={`shadow-${s.pos}-${s.kind}`} transform={`translate(${x} ${y})`} opacity={0.3} pointerEvents="none">
+            <title>{`${s.kind} returns here once used up`}</title>
+            <Marker kind={s.kind} count={1} />
+          </g>
+        );
+      })}
+
       {[...stacks.values()].map((s) => {
         const { x, y } = tileCenter(s.pos);
         return (
@@ -250,6 +266,18 @@ export const Board = memo(function Board({ game, meId, view, steps, range, ghost
         );
       })}
 
+      {throwTo.map((to) => {
+        const { x, y } = tileCenter(to);
+        const go = () => onThrow(to);
+        return (
+          <g key={`throw-${to}`} className={styles.hint} style={tint} role="button" tabIndex={0} aria-label={`Throw the key to ${tileName(to)}`} onClick={go} onKeyDown={press(go)}>
+            <path d={hexPath(to, 0.6)} className={styles.hintFill} />
+            <path d={hexPath(to, 0.6)} className={styles.hintRing} />
+            <circle className={styles.hintDot} cx={x} cy={y} r={1.3} />
+          </g>
+        );
+      })}
+
       {seated.map((p) => {
         const c = tileCenter(p.pos);
         const shared = (crowd.get(p.pos) ?? 0) > 1;
@@ -261,7 +289,7 @@ export const Board = memo(function Board({ game, meId, view, steps, range, ghost
         return (
           <g
             key={p.id}
-            className={`${styles.pawn} ${!p.online ? styles.away : ""}`}
+            className={`${styles.pawn} ${!p.online || p.hp <= 0 ? styles.away : ""}`}
             style={{ transform: `translate(${c.x + slot.x}px, ${c.y + slot.y}px)` }}
             onClick={hot ? () => onTarget(p.id) : undefined}
             onKeyDown={hot ? press(() => onTarget(p.id)) : undefined}
@@ -278,6 +306,10 @@ export const Board = memo(function Board({ game, meId, view, steps, range, ghost
             {afloat && !p.ship && <path className={styles.swim} d="M-4 3.4 q1 -1 2 0 t2 0 t2 0 t2 0" fill="none" stroke="#fff" strokeWidth={0.5} strokeLinecap="round" />}
             <g transform={`translate(0 ${afloat && p.ship ? -1 : 0}) scale(${scale})`}>
               <TokenShape seat={p.color} letter={initial(p.name)} />
+            </g>
+            <g aria-hidden="true">
+              <rect x={-4} y={6} width={8} height={1.1} rx={0.55} fill="#000" fillOpacity={0.55} />
+              <rect x={-4} y={6} width={(8 * p.hp) / MAX_HP} height={1.1} rx={0.55} fill={p.hp <= LOW_HP ? "#e5534b" : "#7fc77f"} />
             </g>
             {!afloat && p.ship && <path d="M3 4.4 H6.6 L5.8 5.8 H3.8 Z" fill="url(#gi-wood)" stroke="#2e1c0d" strokeWidth={0.3} />}
             {p.keys > 0 && (

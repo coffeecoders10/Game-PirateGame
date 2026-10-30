@@ -8,6 +8,7 @@
 
 import { io, type Socket } from "socket.io-client";
 import {
+  actorId,
   addPlayer,
   backToLobby,
   confirmTurn,
@@ -18,6 +19,7 @@ import {
   setPresence,
   skipOfflineTurn,
   startGame,
+  throwKey,
   type Action,
   type GameState,
 } from "./rules";
@@ -33,7 +35,8 @@ const OFFLINE_TURN_GRACE_MS = 6000;
 /** What a player asks the host to do. The host validates every one against the rules. */
 export type Intent =
   | { t: "roll" | "start" | "again" | "bye" }
-  | { t: "confirm"; actions: Action[] };
+  | { t: "confirm"; actions: Action[] }
+  | { t: "throw"; to: number };
 
 type Wire = { t: "hello" } | { t: "state"; s: GameState } | Intent;
 
@@ -101,6 +104,10 @@ export class RoomClient {
   /** Send the whole turn (steps, items, attacks) at once; nothing is shared before this. */
   confirm(actions: Action[]) {
     this.intent({ t: "confirm", actions });
+  }
+  /** A knocked-out pirate hurls their key to a tile. */
+  throwKey(to: number) {
+    this.intent({ t: "throw", to });
   }
   start() {
     this.intent({ t: "start" });
@@ -234,6 +241,9 @@ export class RoomClient {
       case "confirm":
         if (Array.isArray(msg.actions)) this.commit(confirmTurn(g, from, msg.actions.slice(0, 60)));
         break;
+      case "throw":
+        this.commit(throwKey(g, from, msg.to));
+        break;
       case "start":
         if (from === this.me.id) this.commit(startGame(g));
         break;
@@ -280,7 +290,7 @@ export class RoomClient {
     this.skipTimer = null;
     const g = this.game;
     if (!g || !this.synced || !this.isHost() || g.phase !== "playing") return;
-    if (g.players.find((p) => p.id === g.turn)?.online !== false) return;
+    if (g.players.find((p) => p.id === actorId(g))?.online !== false) return;
     this.skipTimer = setTimeout(() => {
       if (this.game && this.isHost()) this.commit(skipOfflineTurn(this.game));
     }, OFFLINE_TURN_GRACE_MS);

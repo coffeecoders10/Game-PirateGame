@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { tileCenter, tileName } from "@/lib/map";
+import { TILE_COUNT, dist, tileCenter, tileName } from "@/lib/map";
 import {
-  CHARGES, RANGE, USE_COST, applyActions, canUse, isActive, legalSteps, targetsFor,
+  CHARGES, DAMAGE, LOW_HP, MAX_HP, RANGE, THROW_RANGE, USE_COST, applyActions, canUse, isActive, legalSteps, targetsFor,
   type Action, type GameState, type Player, type Powerup, type Weapon,
 } from "@/lib/rules";
 import { Board, FULL_VIEW, type View } from "./Board";
@@ -20,6 +20,7 @@ type Props = {
   connected: boolean;
   onRoll: () => void;
   onConfirm: (actions: Action[]) => void;
+  onThrow: (to: number) => void;
   onAgain: () => void;
   onLeave: () => void;
 };
@@ -42,7 +43,7 @@ function closeUp(tile: number): View {
   return { x: clamp(x - size / 2), y: clamp(y - size / 2), size };
 }
 
-export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, onAgain, onLeave }: Props) {
+export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, onThrow, onAgain, onLeave }: Props) {
   const liveMyTurn = live.phase === "playing" && live.turn === meId && live.stage === "move";
 
   // The turn is planned locally on top of the shared state; only Confirm sends it. The plan
@@ -93,7 +94,16 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
   const byId = (id: string | null) => game.players.find((p) => p.id === id);
   const turnPlayer = byId(game.turn);
   const playing = live.phase === "playing";
-  const myTurn = playing && live.turn === meId && !!me;
+  const myTurn = playing && live.turn === meId && !!me && live.stage !== "throw";
+
+  // A knocked-out pirate holding a key hurls it once the attacker's turn is over; everyone waits.
+  const throwing = playing && live.stage === "throw" && !anim;
+  const thrower = throwing ? byId(live.thrower) : undefined;
+  const iThrow = throwing && live.thrower === meId && !!me;
+  const throwTiles = useMemo(
+    () => (iThrow && connected && me ? Array.from({ length: TILE_COUNT }, (_, i) => i).filter((i) => dist(i, me.pos) <= THROW_RANGE) : []),
+    [iThrow, connected, me],
+  );
 
   // "pending" = we asked the host to roll and no new roll has arrived yet.
   const [pendingRoll, setPendingRoll] = useState<number | null>(null);
@@ -137,7 +147,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
 
   // Zoom: phones start close-up, because the hexagon tiles are tiny on a small screen.
   const [zoomed, setZoomed] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
-  const focus = (myTurn ? me : turnPlayer)?.pos ?? me?.pos ?? 0;
+  const focus = (thrower ?? (myTurn ? me : turnPlayer))?.pos ?? me?.pos ?? 0;
   const view = useMemo(() => (zoomed ? closeUp(focus) : FULL_VIEW), [zoomed, focus]);
 
   // Only animate events that happen after we arrived.
@@ -153,6 +163,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
   let headline: string;
   if (live.phase === "finished") headline = "The hunt is over";
   else if (!me) headline = "Watching";
+  else if (thrower) headline = iThrow ? `Knocked out! Hurl your key up to ${THROW_RANGE} tiles away` : `${thrower.name} is hurling their key…`;
   else if (turnPlayer && !turnPlayer.online) headline = "Waiting for them to reconnect…";
   else if (!myTurn) headline = live.stage === "roll" ? "About to roll" : "Moving";
   else if (live.stage === "roll") headline = pending ? "Rolling…" : "Roll the die";
@@ -178,10 +189,10 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
         <div className={styles.layout}>
           <div className={styles.boardCol}>
             <div className={styles.banner}>
-              {turnPlayer && <Token seat={turnPlayer.color} name={turnPlayer.name} size={34} />}
+              {(thrower ?? turnPlayer) && <Token seat={(thrower ?? turnPlayer)!.color} name={(thrower ?? turnPlayer)!.name} size={34} />}
               <p className={styles.headline} aria-live="polite">
-                <b>{turnPlayer?.name}{myTurn ? " (you)" : ""}</b>
-                <span className={myTurn ? styles.mine : ""}>{headline}</span>
+                <b>{(thrower ?? turnPlayer)?.name}{myTurn || iThrow ? " (you)" : ""}</b>
+                <span className={myTurn || iThrow ? styles.mine : ""}>{headline}</span>
               </p>
               {showMp && (
                 <div className={styles.mp} aria-label={`${fmt(game.mp)} movement points left`}>
@@ -191,7 +202,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
             </div>
 
             <div className={styles.frame}>
-              <Board game={shown} meId={meId} view={view} steps={steps} range={aim ? RANGE[aim] : null} ghost={trail} targets={targets} fx={fx} onStep={(to) => addAction({ t: "step", to })} onTarget={attack} />
+              <Board game={shown} meId={meId} view={view} steps={steps} range={iThrow ? THROW_RANGE : aim ? RANGE[aim] : null} ghost={trail} targets={targets} throwTo={throwTiles} fx={fx} onStep={(to) => addAction({ t: "step", to })} onTarget={attack} onThrow={onThrow} />
               {stageOpen && (
                 <div className={`${styles.stage} ${canRoll || pending ? styles.stageLive : ""}`}>
                   <Dice value={live.dice} rolls={live.rolls} canRoll={canRoll} pending={pending} size={canRoll || pending ? 104 : 96} onRoll={doRoll} />
@@ -308,9 +319,10 @@ function Crewmate({ p, turn, you }: { p: Player; turn: boolean; you: boolean }) 
       <span className={styles.mname}>
         {p.name}
         {you && <small> you</small>}
-        {p.left ? <small> left</small> : !p.online ? <small> offline</small> : null}
+        {p.left ? <small> left</small> : !p.online ? <small> offline</small> : p.hp <= 0 ? <small> knocked out</small> : null}
       </span>
       <span className={styles.badges}>
+        <span className={`${styles.badge} ${p.hp <= LOW_HP ? styles.hurt : ""}`} title={`Health ${p.hp} of ${MAX_HP}`}>♥ {p.hp}</span>
         {p.keys > 0 && <span className={styles.badge} title={`${p.keys} key${p.keys > 1 ? "s" : ""}`}><ItemIcon kind="key" size={14} />{p.keys}</span>}
         {p.ship && <span className={styles.badge} title="Has a ship"><ItemIcon kind="ship" size={14} /></span>}
         {gear.map((k) => (
@@ -346,6 +358,7 @@ function Inventory({ game, me, myTurn, aim, onAim, onUse }: InvProps) {
       <div className={styles.invHead}>
         <h2 className={styles.h}>Gear</h2>
         <span className={styles.status}>
+          <span className={`${styles.on} ${me.hp <= LOW_HP ? styles.hurt : ""}`} title={me.hp <= LOW_HP ? "Wounded: every step costs double" : "Healthy"}>♥ {me.hp}/{MAX_HP}</span>
           <span className={me.keys ? styles.on : ""}><ItemIcon kind="key" size={16} /> {me.keys ? `${me.keys} key${me.keys > 1 ? "s" : ""}` : "No key"}</span>
           <span className={me.ship ? styles.on : ""}><ItemIcon kind="ship" size={16} /> {me.ship ? "Ship" : "No ship"}</span>
         </span>
@@ -383,7 +396,7 @@ function Inventory({ game, me, myTurn, aim, onAim, onUse }: InvProps) {
                   <Tooltip.Content className={styles.tip} sideOffset={6}>
                     <b>{ITEM_INFO[item].label}</b>
                     <span>{ITEM_INFO[item].blurb}</span>
-                    <small>Costs {USE_COST} move point to use. Comes with {CHARGES[item]} {item === "eyepatch" ? "discounted steps" : "shots"}.</small>
+                    <small>Costs {USE_COST} move point to use. Comes with {CHARGES[item]} {item === "eyepatch" ? "discounted steps" : "shots"}.{isWeapon(item) && ` Deals ${DAMAGE[item]} damage.`}</small>
                     {why && <em>{why}</em>}
                     <Tooltip.Arrow className={styles.arrow} />
                   </Tooltip.Content>
