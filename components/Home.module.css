@@ -24,10 +24,28 @@
 .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(214, 178, 94, 0.18); }
 .form :global(.btn) { width: 100%; }
 
-.or { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; color: var(--muted); }
-.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); }
+.tab {
+  min-height: 40px;
+  padding: 0 2px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-.joinRow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
-.joinRow :global(.btn) { width: auto; }
+.panel { display: grid; gap: 14px; }
+.hint { margin: 0; font-size: 0.9rem; color: var(--muted); }
 .code { text-align: center; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; }
 .error { margin: 0; padding: 10px 12px; border-radius: 8px; font-size: 0.9rem; color: #ffb3ad; background: rgba(229, 83, 75, 0.12); border: 1px solid rgba(229, 83, 75, 0.35); }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { RoomClient } from "@/lib/roomClient";
 import { ChartBackdrop } from "./ChartBackdrop";
-import { Home } from "./Home";
+import { Home, type HomeTab } from "./Home";
 import { Lobby } from "./Lobby";
 import { Table } from "./Table";
 import styles from "./Game.module.css";
@@ -26,7 +26,19 @@ function playerId() {
   }
 }
 
+// Remembered per tab so a refresh rejoins, while a shared invite link only prefills the form.
+function rememberedRoom(code?: string | null): string {
+  try {
+    if (code === null) sessionStorage.removeItem("dr:room");
+    else if (code) sessionStorage.setItem("dr:room", code);
+    return sessionStorage.getItem("dr:room") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function setUrlRoom(code: string | null) {
+  rememberedRoom(code);
   const url = new URL(window.location.href);
   if (code) url.searchParams.set("room", code);
   else url.searchParams.delete("room");
@@ -38,6 +50,7 @@ export function Game() {
   const snap = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getServerSnapshot);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [tab, setTab] = useState<HomeTab>("create");
 
   const enter = (mode: "create" | "join", rawName: string, rawCode: string) => {
     const n = cleanName(rawName);
@@ -60,7 +73,10 @@ export function Game() {
     const room = cleanCode(new URLSearchParams(window.location.search).get("room") ?? "");
     setName(saved); // eslint-disable-line react-hooks/set-state-in-effect
     setCode(room);
-    if (saved && room.length === 5) enter("join", saved, room);
+    if (room.length === 5) {
+      if (saved && rememberedRoom() === room) enter("join", saved, room);
+      else setTab("join");
+    }
     return () => client.leave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -102,6 +118,8 @@ export function Game() {
       <Home
         name={name}
         code={code}
+        tab={tab}
+        onTab={setTab}
         error={snap.error}
         onName={setName}
         onCode={(v) => setCode(cleanCode(v))}
