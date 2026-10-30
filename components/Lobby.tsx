@@ -32,7 +32,7 @@ export function Lobby({ game, meId, hostId, onStart, onLeave }: Props) {
 
   return (
     <section className={styles.wrap} aria-labelledby="lobby-title">
-      <h1 id="lobby-title" className={styles.title}>Crew {game.code}</h1>
+      <h1 id="lobby-title" className={styles.title}>Hunt {game.code}</h1>
       <p className={styles.sub}>Share the code or the link. The host starts when everyone is in.</p>
       <button className="btn ghost" onClick={copy}>{copied ? "Link copied" : "Copy invite link"}</button>
 
@@ -59,7 +59,7 @@ export function Lobby({ game, meId, hostId, onStart, onLeave }: Props) {
       </ul>
 
       {!me ? (
-        <p className={styles.hint}>This crew is full, or the voyage already started.</p>
+        <p className={styles.hint}>This hunt is full, or the voyage already started.</p>
       ) : isHost ? (
         <>
           <button className={`btn ${styles.start}`} disabled={ready < MIN_PLAYERS} onClick={onStart}>Start the hunt</button>
@@ -71,7 +71,7 @@ export function Lobby({ game, meId, hostId, onStart, onLeave }: Props) {
 
       <div className={styles.row}>
         <Rules />
-        <button className="btn ghost" onClick={onLeave}>Leave crew</button>
+        <button className="btn ghost" onClick={onLeave}>Leave hunt</button>
       </div>
     </section>
   );

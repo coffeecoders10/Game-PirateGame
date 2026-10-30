@@ -7,7 +7,7 @@ const ui = Instrument_Sans({ variable: "--font-ui", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Dead Reckoning",
-  description: "A pirate treasure hunt for 2–5 players. Find a key, reach the chest, outwit your crew.",
+  description: "A pirate treasure hunt for 2–5 players. Find a key, reach the chest, outwit your rivals.",
 };
 
 export const viewport: Viewport = { themeColor: "#0a0f14", width: "device-width", initialScale: 1 };

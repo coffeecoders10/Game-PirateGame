@@ -1,7 +1,7 @@
 .table {
   width: min(1240px, 100%);
   display: grid;
-  gap: 18px;
+  gap: 10px;
   align-self: start;
 }
 
@@ -111,10 +111,12 @@
 .badges:empty { display: none; }
 .badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.8rem; color: var(--muted); }
 
-/* Log */
-.log { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
-.log li:first-child { color: var(--text); }
-.log li:nth-child(n + 6) { display: none; }
+/* Confirm bar */
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.iconBtn { width: 38px; padding: 0; display: inline-grid; place-items: center; }
+.iconBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.moves { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
+.moves li:last-child { color: var(--text); }
 
 /* Winner */
 .overlay { position: fixed; inset: 0; z-index: 40; background: rgba(5, 8, 11, 0.78); }
@@ -144,7 +146,7 @@
 @media (min-width: 960px) {
   .layout { grid-template-columns: auto 340px; justify-content: center; gap: 32px; }
   .frame { width: max(440px, min(calc(100dvh - 180px), 860px)); }
-  .boardCol { position: sticky; top: 16px; }
+  .boardCol { position: sticky; top: 8px; }
 }
 @media (max-width: 420px) {
   .slotName { font-size: 0.78rem; }

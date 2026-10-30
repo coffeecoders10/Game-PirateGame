@@ -69,3 +69,27 @@ export const tileCenter = (i: number) => ({ x: colOf(i) * 10 + 5, y: rowOf(i) * 
 
 /** Chart reference like "C7" (column letter, row number). */
 export const tileName = (i: number) => `${String.fromCharCode(65 + colOf(i))}${rowOf(i) + 1}`;
+
+/** Land tiles of the islands drawn green (islands = 8-connected land; every other one, from the second). */
+export const GREEN_TILES: number[] = (() => {
+  const seen = new Set<number>();
+  const green: number[] = [];
+  let island = 0;
+  for (let start = 0; start < TILE_COUNT; start++) {
+    if (!LAND[start] || seen.has(start)) continue;
+    const stack = [start];
+    seen.add(start);
+    const tiles: number[] = [];
+    while (stack.length) {
+      const t = stack.pop()!;
+      tiles.push(t);
+      for (const n of neighbours(t)) {
+        if (!LAND[n] || seen.has(n)) continue;
+        seen.add(n);
+        stack.push(n);
+      }
+    }
+    if (island++ % 2 === 1) green.push(...tiles);
+  }
+  return green;
+})();

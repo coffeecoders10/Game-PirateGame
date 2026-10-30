@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { COAST_PATH } from "@/lib/coast";
-import { GRID, HARBOURS, LAND, SPAWNS, TILE_COUNT, colOf, dist, rowOf, tileCenter, tileName } from "@/lib/map";
+import { GREEN_TILES, GRID, HARBOURS, LAND, SPAWNS, TILE_COUNT, colOf, dist, rowOf, tileCenter, tileName } from "@/lib/map";
 import { isActive, SEATS, type GameState, type LogEntry } from "@/lib/rules";
 import { Glyph } from "./ItemIcon";
 import { TokenShape, initial } from "./Token";
@@ -76,6 +76,9 @@ export const Chart = memo(function Chart({ labels = true }: { labels?: boolean }
       </g>
       <clipPath id="land"><path d={COAST_PATH} fillRule="evenodd" /></clipPath>
       <path d={COAST_PATH} fill="var(--land)" fillRule="evenodd" stroke="var(--shore)" strokeWidth={0.5} strokeLinejoin="round" />
+      <g clipPath="url(#land)" fill="var(--grass)">
+        {GREEN_TILES.map((i) => <rect key={i} x={colOf(i) * 10 - 0.05} y={rowOf(i) * 10 - 0.05} width={10.1} height={10.1} />)}
+      </g>
       <g strokeWidth={0.25}>
         <path stroke="#fff" strokeOpacity={0.05} d={Array.from({ length: GRID + 1 }, (_, k) => `M${k * 10} 0V${SIZE}M0 ${k * 10}H${SIZE}`).join("")} />
         <path stroke="#000" strokeOpacity={0.09} clipPath="url(#land)" d={Array.from({ length: GRID + 1 }, (_, k) => `M${k * 10} 0V${SIZE}M0 ${k * 10}H${SIZE}`).join("")} />

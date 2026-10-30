@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { colOf, rowOf } from "@/lib/map";
+import { colOf, rowOf, tileName } from "@/lib/map";
 import {
-  CHARGES, RANGE, USE_COST, canUse, isActive, legalSteps, targetsFor,
-  type GameState, type Player, type Powerup, type Weapon,
+  CHARGES, RANGE, USE_COST, applyActions, canUse, isActive, legalSteps, targetsFor,
+  type Action, type GameState, type Player, type Powerup, type Weapon,
 } from "@/lib/rules";
 import { Board, FULL_VIEW, type View } from "./Board";
 import { Dice } from "./Dice";
@@ -19,13 +19,14 @@ type Props = {
   hostId: string | null;
   connected: boolean;
   onRoll: () => void;
-  onStep: (to: number) => void;
-  onUse: (item: Powerup, target?: string) => void;
-  onEnd: () => void;
+  onConfirm: (actions: Action[]) => void;
   onAgain: () => void;
   onLeave: () => void;
 };
 
+/** Pause between the moves of a replayed turn. */
+const STEP_MS = 750;
+const NO_ACTIONS: Action[] = [];
 const POWERUPS: Powerup[] = ["sword", "pistol", "cannon", "eyepatch"];
 const isWeapon = (i: Powerup): i is Weapon => i !== "eyepatch";
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : `${Math.floor(n) || ""}½`);
@@ -40,12 +41,48 @@ function closeUp(tile: number): View {
   return { x: clamp(colOf(tile) * 10 + 5 - size / 2), y: clamp(rowOf(tile) * 10 + 5 - size / 2), size };
 }
 
-export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, onEnd, onAgain, onLeave }: Props) {
+export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, onAgain, onLeave }: Props) {
+  const liveMyTurn = live.phase === "playing" && live.turn === meId && live.stage === "move";
+
+  // The turn is planned locally on top of the shared state; only Confirm sends it. The plan
+  // belongs to one roll, so a new roll or turn starts it fresh.
+  const planKey = `${live.rolls}:${live.turn}`;
+  const [plan, setPlan] = useState<{ key: string; list: Action[] }>({ key: "", list: [] });
+  const actions = liveMyTurn && plan.key === planKey ? plan.list : NO_ACTIONS;
+  const draft = useMemo(() => (liveMyTurn ? applyActions(live, meId, actions) : live), [live, liveMyTurn, meId, actions]);
+
+  // When someone else confirms their turn, replay it here move by move before showing the result.
+  const [anim, setAnim] = useState<GameState | null>(null);
+  const prev = useRef(live);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = live;
+    const play = live.play;
+    if (!play || play.n === before.play?.n || play.by === meId) return;
+    if (before.phase !== "playing" || before.turn !== play.by || before.stage !== "move") return;
+    const frames = play.actions.map((_, i) => applyActions(before, play.by, play.actions.slice(0, i + 1)));
+    if (timer.current) clearInterval(timer.current);
+    if (!frames.length) return setAnim(null);
+    let i = 0;
+    setAnim(frames[0]);
+    timer.current = setInterval(() => {
+      i += 1;
+      if (i < frames.length) return setAnim(frames[i]);
+      clearInterval(timer.current!);
+      timer.current = null;
+      setAnim(null);
+    }, STEP_MS);
+  }, [live, meId]);
+  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  const game = anim ?? draft;
+  const addAction = (a: Action) => setPlan({ key: planKey, list: [...actions, a] });
+
   const me = game.players.find((p) => p.id === meId);
   const byId = (id: string | null) => game.players.find((p) => p.id === id);
   const turnPlayer = byId(game.turn);
-  const playing = game.phase === "playing";
-  const myTurn = playing && game.turn === meId && !!me;
+  const playing = live.phase === "playing";
+  const myTurn = playing && live.turn === meId && !!me;
 
   // "pending" = we asked the host to roll and no new roll has arrived yet.
   const [pendingRoll, setPendingRoll] = useState<number | null>(null);
@@ -54,7 +91,7 @@ export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, on
     const t = setTimeout(() => setPendingRoll(null), 4000);
     return () => clearTimeout(t);
   }, [pendingRoll]);
-  const pending = pendingRoll === game.rolls;
+  const pending = pendingRoll === live.rolls;
 
   // Weapon being aimed. Drops away by itself when the turn or the weapon is gone.
   const [aimed, setAimed] = useState<Weapon | null>(null);
@@ -75,35 +112,36 @@ export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, on
   const view = useMemo(() => (zoomed ? closeUp(focus) : FULL_VIEW), [zoomed, focus]);
 
   // Only animate events that happen after we arrived.
-  const [seenN] = useState(game.n);
+  const [seenN] = useState(live.n);
   const last = game.log[game.log.length - 1];
   const fx = last && last.n > seenN ? last : null;
 
   const attack = (id: string) => {
-    if (aim) onUse(aim, id);
+    if (aim) addAction({ t: "use", item: aim, target: id });
     setAimed(null);
   };
 
   let headline: string;
-  if (game.phase === "finished") headline = "The hunt is over";
+  if (live.phase === "finished") headline = "The hunt is over";
   else if (!me) headline = "Watching";
   else if (turnPlayer && !turnPlayer.online) headline = "Waiting for them to reconnect…";
-  else if (!myTurn) headline = game.stage === "roll" ? "About to roll" : "Moving";
-  else if (game.stage === "roll") headline = pending ? "Rolling…" : "Roll the die";
+  else if (!myTurn) headline = live.stage === "roll" ? "About to roll" : "Moving";
+  else if (live.stage === "roll") headline = pending ? "Rolling…" : "Roll the die";
   else if (aim) headline = targets.length ? `Pick a target for your ${aim}` : `Nobody in range of your ${aim}`;
-  else headline = steps.length ? "Choose your next tile" : "No tiles in reach. Use an item or end your turn.";
+  else if (game.phase === "finished") headline = "You reached the chest. Confirm to finish";
+  else headline = steps.length ? "Plan your moves, then confirm" : "No tiles in reach. Use an item or confirm.";
 
-  const finished = game.phase === "finished";
-  const winner = byId(game.winner);
+  const finished = live.phase === "finished" && !anim;
+  const winner = live.players.find((p) => p.id === live.winner);
   const isHost = hostId === meId;
-  const showMp = playing && game.stage === "move";
+  const showMp = playing && live.stage === "move";
 
   return (
     <Tooltip.Provider delayDuration={250}>
       <div className={styles.table}>
         <header className={styles.top}>
           <h1 className={styles.brand}>Dead Reckoning</h1>
-          <span className={styles.code}>Crew <b>{game.code}</b></span>
+          <span className={styles.code}>Hunt <b>{game.code}</b></span>
           <Rules />
           <button className="btn ghost" onClick={onLeave}>Leave</button>
         </header>
@@ -124,7 +162,7 @@ export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, on
             </div>
 
             <div className={styles.frame}>
-              <Board game={game} meId={meId} view={view} steps={steps} range={aim ? RANGE[aim] : null} targets={targets} fx={fx} onStep={onStep} onTarget={attack} />
+              <Board game={game} meId={meId} view={view} steps={steps} range={aim ? RANGE[aim] : null} targets={targets} fx={fx} onStep={(to) => addAction({ t: "step", to })} onTarget={attack} />
               <button className={`btn ghost ${styles.zoom}`} aria-pressed={zoomed} onClick={() => setZoomed((z) => !z)}>
                 {zoomed ? "Show all" : "Zoom in"}
               </button>
@@ -134,40 +172,53 @@ export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, on
           <aside className={styles.side}>
             <section className={styles.roller} aria-label="Dice">
               <Dice
-                value={game.dice}
-                rolls={game.rolls}
-                canRoll={myTurn && game.stage === "roll" && connected}
+                value={live.dice}
+                rolls={live.rolls}
+                canRoll={myTurn && live.stage === "roll" && connected && !anim}
                 pending={pending}
                 onRoll={() => {
-                  setPendingRoll(game.rolls);
+                  setPendingRoll(live.rolls);
                   onRoll();
                 }}
               />
               <div className={styles.rollerText}>
-                <p>{game.dice ? `${turnPlayer?.name} rolled ${game.dice}` : "No roll yet"}</p>
-                {myTurn && game.stage === "move" && (
-                  <button className="btn teal" onClick={() => { setAimed(null); onEnd(); }}>End turn</button>
+                <p>{live.dice ? `${turnPlayer?.name} rolled ${live.dice}` : "No roll yet"}</p>
+                {myTurn && live.stage === "move" && (
+                  <div className={styles.confirm}>
+                    <button className="btn teal" onClick={() => { setAimed(null); setPlan({ key: "", list: [] }); onConfirm(actions); }}>
+                      Confirm{actions.length ? ` (${actions.length})` : ""}
+                    </button>
+                    <button className={`btn ghost ${styles.iconBtn}`} title="Undo last move" aria-label="Undo last move" disabled={!actions.length} onClick={() => { setAimed(null); setPlan({ key: planKey, list: actions.slice(0, -1) }); }}>
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+                    </button>
+                    <button className={`btn ghost ${styles.iconBtn}`} title="Reset all moves" aria-label="Reset all moves" disabled={!actions.length} onClick={() => { setAimed(null); setPlan({ key: planKey, list: [] }); }}>
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                    </button>
+                  </div>
                 )}
               </div>
             </section>
 
-            {me && playing && <Inventory game={game} me={me} myTurn={myTurn} aim={aim} onAim={setAimed} onUse={onUse} />}
+            {liveMyTurn && actions.length > 0 && (
+              <section aria-label="Your moves">
+                <h2 className={styles.h}>Your moves</h2>
+                <ol className={styles.moves}>
+                  {actions.map((a, i) => (
+                    <li key={i}>{describe(live, meId, actions, i)}</li>
+                  ))}
+                </ol>
+              </section>
+            )}
 
-            <section aria-label="Crew">
-              <h2 className={styles.h}>Crew</h2>
+            {me && playing && <Inventory game={game} me={me} myTurn={myTurn} aim={aim} onAim={setAimed} onUse={(item) => addAction({ t: "use", item })} />}
+
+            <section aria-label="Pirates">
+              <h2 className={styles.h}>Pirates</h2>
               <ul className={styles.crew}>
                 {game.players.map((p) => (
                   <Crewmate key={p.id} p={p} turn={playing && p.id === game.turn} you={p.id === meId} />
                 ))}
               </ul>
-            </section>
-
-            <section aria-label="Log">
-              <h2 className={styles.h}>Log</h2>
-              <ol className={styles.log}>
-                {[...game.log].reverse().map((e) => <li key={e.n}>{e.text}</li>)}
-                {game.log.length === 0 && <li>Roll the die to set sail.</li>}
-              </ol>
             </section>
           </aside>
         </div>
@@ -195,13 +246,24 @@ export function Table({ game, meId, hostId, connected, onRoll, onStep, onUse, on
               ) : (
                 <p className={styles.wait}>Waiting for {byId(hostId)?.name ?? "the host"} to start another round…</p>
               )}
-              <button className="btn ghost" onClick={onLeave}>Leave crew</button>
+              <button className="btn ghost" onClick={onLeave}>Leave hunt</button>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
       </div>
     </Tooltip.Provider>
   );
+}
+
+/** One line per planned action, e.g. "Moved to C4 · 2 left". */
+function describe(live: GameState, pid: string, actions: Action[], i: number): string {
+  const after = applyActions(live, pid, actions.slice(0, i + 1));
+  const a = actions[i];
+  const left = `${fmt(after.mp)} left`;
+  if (a.t === "step") return `Moved to ${tileName(a.to)} · ${left}`;
+  if (a.item === "eyepatch") return `Put on the eyepatch · ${left}`;
+  const who = live.players.find((p) => p.id === a.target)?.name ?? "a pirate";
+  return `Used ${a.item} on ${who} · ${left}`;
 }
 
 function Crewmate({ p, turn, you }: { p: Player; turn: boolean; you: boolean }) {

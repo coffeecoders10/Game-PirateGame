@@ -9,21 +9,17 @@
 import { io, type Socket } from "socket.io-client";
 import {
   addPlayer,
-  attack,
   backToLobby,
+  confirmTurn,
   createGame,
-  endTurn,
   pickHost,
   removePlayer,
   rollDice,
   setPresence,
   skipOfflineTurn,
   startGame,
-  step,
-  wearEyepatch,
+  type Action,
   type GameState,
-  type Powerup,
-  type Weapon,
 } from "./rules";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ?? "https://coffeecoders.cc/socket";
@@ -36,9 +32,8 @@ const OFFLINE_TURN_GRACE_MS = 6000;
 
 /** What a player asks the host to do. The host validates every one against the rules. */
 export type Intent =
-  | { t: "roll" | "start" | "again" | "bye" | "end" }
-  | { t: "step"; to: number }
-  | { t: "use"; item: Powerup; target?: string };
+  | { t: "roll" | "start" | "again" | "bye" }
+  | { t: "confirm"; actions: Action[] };
 
 type Wire = { t: "hello" } | { t: "state"; s: GameState } | Intent;
 
@@ -103,14 +98,9 @@ export class RoomClient {
   roll() {
     this.intent({ t: "roll" });
   }
-  step(to: number) {
-    this.intent({ t: "step", to });
-  }
-  use(item: Powerup, target?: string) {
-    this.intent({ t: "use", item, target });
-  }
-  endTurn() {
-    this.intent({ t: "end" });
+  /** Send the whole turn (steps, items, attacks) at once; nothing is shared before this. */
+  confirm(actions: Action[]) {
+    this.intent({ t: "confirm", actions });
   }
   start() {
     this.intent({ t: "start" });
@@ -180,7 +170,7 @@ export class RoomClient {
         this.synced = true; // nobody answered: we are the only one left
         this.afterChange();
       } else {
-        this.fail("We couldn't find a crew with that code.");
+        this.fail("We couldn't find a hunt with that code.");
       }
     }, SYNC_TIMEOUT_MS);
   }
@@ -241,20 +231,8 @@ export class RoomClient {
       case "roll":
         this.commit(rollDice(g, from, 1 + Math.floor(Math.random() * 6)));
         break;
-      case "step":
-        if (Number.isInteger(msg.to)) this.commit(step(g, from, msg.to));
-        break;
-      case "use":
-        this.commit(
-          msg.item === "eyepatch"
-            ? wearEyepatch(g, from)
-            : typeof msg.target === "string"
-              ? attack(g, from, msg.item as Weapon, msg.target)
-              : g,
-        );
-        break;
-      case "end":
-        this.commit(endTurn(g, from));
+      case "confirm":
+        if (Array.isArray(msg.actions)) this.commit(confirmTurn(g, from, msg.actions.slice(0, 60)));
         break;
       case "start":
         if (from === this.me.id) this.commit(startGame(g));
@@ -277,7 +255,7 @@ export class RoomClient {
     this.stopSync();
     if (this.status() !== "in") this.set({ status: "in" });
     const after = s.players.find((p) => p.id === this.me.id);
-    if (before && !after && s.phase === "lobby") this.notice("The crew was reset");
+    if (before && !after && s.phase === "lobby") this.notice("The hunt was reset");
     this.afterChange();
   }
 

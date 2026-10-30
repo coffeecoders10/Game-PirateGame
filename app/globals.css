@@ -16,6 +16,7 @@
   --sound-3: #112530;
   --land: #cfc8b4;
   --shore: #8b8672;
+  --grass: #8bb06a;
 
   --display: var(--font-display), Georgia, serif;
   --ui: var(--font-ui), system-ui, sans-serif;

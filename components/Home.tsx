@@ -32,13 +32,13 @@ export function Home({ name, code, error, onName, onCode, onCreate, onJoin }: Pr
           <input value={name} onChange={(e) => onName(e.target.value)} maxLength={14} placeholder="e.g. Anne" autoComplete="nickname" enterKeyHint="go" />
         </label>
 
-        <button type="button" className="btn" disabled={!hasName} onClick={onCreate}>Start a new crew</button>
+        <button type="button" className="btn" disabled={!hasName} onClick={onCreate}>Start a new hunt</button>
 
         <div className={styles.or}><span>or join one</span></div>
 
         <div className={styles.joinRow}>
           <label className={styles.field}>
-            <span className="srOnly">Crew code</span>
+            <span className="srOnly">Hunt code</span>
             <input
               className={styles.code}
               value={code}
@@ -48,7 +48,7 @@ export function Home({ name, code, error, onName, onCode, onCreate, onJoin }: Pr
               autoCapitalize="characters"
               autoComplete="off"
               spellCheck={false}
-              aria-label="Crew code"
+              aria-label="Hunt code"
             />
           </label>
           <button type="button" className="btn teal" disabled={!canJoin} onClick={onJoin}>Join</button>

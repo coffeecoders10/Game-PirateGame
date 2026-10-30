@@ -84,9 +84,7 @@ export function Game() {
           hostId={snap.hostId}
           connected={snap.connected}
           onRoll={() => client.roll()}
-          onStep={(to) => client.step(to)}
-          onUse={(item, target) => client.use(item, target)}
-          onEnd={() => client.endTurn()}
+          onConfirm={(actions) => client.confirm(actions)}
           onAgain={() => client.playAgain()}
           onLeave={leave}
         />
@@ -95,7 +93,7 @@ export function Game() {
     view = (
       <div className={styles.center}>
         <div className={styles.spinner} aria-hidden="true" />
-        <p className={styles.msg}>Finding your crew…</p>
+        <p className={styles.msg}>Finding the hunt…</p>
         <button className="btn ghost" onClick={leave}>Cancel</button>
       </div>
     );

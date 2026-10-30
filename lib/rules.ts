@@ -82,6 +82,7 @@ export type GameState = {
   chest: number;
   items: Item[];
   log: LogEntry[]; // newest last
+  play: { n: number; by: string; actions: Action[] } | null; // last confirmed turn, replayed on other screens
   n: number; // log counter
   winner: string | null;
 };
@@ -98,7 +99,7 @@ const newPlayer = (id: string, name: string, color: number): Player => ({
 export function createGame(code: string, id: string, name: string): GameState {
   return {
     v: 1, code, phase: "lobby", players: [newPlayer(id, name, 0)], turn: id, stage: "roll",
-    dice: null, rolls: 0, mp: 0, moved: false, chest: -1, items: [], log: [], n: 0, winner: null,
+    dice: null, rolls: 0, mp: 0, moved: false, chest: -1, items: [], log: [], play: null, n: 0, winner: null,
   };
 }
 
@@ -162,7 +163,7 @@ export function startGame(s: GameState, rng: Rng = Math.random): GameState {
   }
   return {
     ...s, phase: "playing", players, turn: players[0].id, stage: "roll", dice: null, rolls: 0, mp: 0,
-    moved: false, chest, items: board.items, log: [], n: 0, winner: null,
+    moved: false, chest, items: board.items, log: [], play: null, n: 0, winner: null,
   };
 }
 
@@ -171,7 +172,7 @@ export function backToLobby(s: GameState): GameState {
   const players = s.players.filter((p) => isActive(p) && p.online).map((p) => newPlayer(p.id, p.name, p.color));
   return {
     ...s, phase: "lobby", players, turn: players[0]?.id ?? s.turn, stage: "roll", dice: null, mp: 0,
-    chest: -1, items: [], log: [], winner: null,
+    chest: -1, items: [], log: [], play: null, winner: null,
   };
 }
 
@@ -255,7 +256,29 @@ export function endTurn(s: GameState, pid: string): GameState {
   return passTurn(s);
 }
 
-export function step(s: GameState, pid: string, to: number): GameState {
+/**
+ * A move planned during a turn. The active player builds a list of these locally, and only the
+ * confirmed list is sent to the host. With `auto` off the turn never ends by itself, so a draft
+ * stays editable until it is confirmed.
+ */
+export type Action = { t: "step"; to: number } | { t: "use"; item: Powerup; target?: string };
+
+export function applyActions(s: GameState, pid: string, actions: Action[]): GameState {
+  return actions.reduce((cur, a) => {
+    if (a.t === "step") return step(cur, pid, a.to, false);
+    if (a.item === "eyepatch") return wearEyepatch(cur, pid, false);
+    return typeof a.target === "string" ? attack(cur, pid, a.item, a.target, false) : cur;
+  }, s);
+}
+
+/** Replay a confirmed plan on the host's state, then close the turn. */
+export function confirmTurn(s: GameState, pid: string, actions: Action[]): GameState {
+  if (s.phase !== "playing" || s.turn !== pid || s.stage !== "move") return s;
+  const done = endTurn(applyActions(s, pid, actions), pid);
+  return { ...done, play: { n: (s.play?.n ?? 0) + 1, by: pid, actions } };
+}
+
+export function step(s: GameState, pid: string, to: number, auto = true): GameState {
   const p = byId(s, pid);
   const move = p && legalSteps(s, p).find((m) => m.to === to);
   if (!p || !move) return s;
@@ -266,6 +289,7 @@ export function step(s: GameState, pid: string, to: number): GameState {
       q.id === pid ? { ...q, pos: to, inv: spendEyepatch(q) } : q),
   };
   next = arrive(next, pid);
+  if (!auto) return next;
   return settle(next.phase === "playing" && next.mp <= 0 ? passTurn(next) : next);
 }
 
@@ -313,17 +337,18 @@ function arrive(s: GameState, pid: string): GameState {
 
 // ── items & combat ──────────────────────────────────────────────────────────
 
-export function wearEyepatch(s: GameState, pid: string): GameState {
+export function wearEyepatch(s: GameState, pid: string, auto = true): GameState {
   const p = byId(s, pid);
   if (!p || !canUse(s, p, "eyepatch")) return s;
   const next: GameState = {
     ...s, mp: s.mp - USE_COST,
     players: s.players.map((q) => (q.id === pid ? { ...q, eyepatchOn: true } : q)),
   };
-  return settle(say(next, { kind: "eyepatch", pid, text: `${p.name} put on the eyepatch — moves cost half` }));
+  const said = say(next, { kind: "eyepatch", pid, text: `${p.name} put on the eyepatch — moves cost half` });
+  return auto ? settle(said) : said;
 }
 
-export function attack(s: GameState, pid: string, weapon: Weapon, targetId: string): GameState {
+export function attack(s: GameState, pid: string, weapon: Weapon, targetId: string, auto = true): GameState {
   const p = byId(s, pid);
   const t = byId(s, targetId);
   if (!p || !t || !(weapon in RANGE) || !canUse(s, p, weapon)) return s;
@@ -338,11 +363,12 @@ export function attack(s: GameState, pid: string, weapon: Weapon, targetId: stri
     return q;
   });
   const next: GameState = { ...s, mp: s.mp - USE_COST, players, items: [...s.items, ...drops] };
-  return settle(say(next, {
+  const said = say(next, {
     kind: "attack", pid, weapon, target: targetId, from: p.pos, at: t.pos,
     text: `${p.name} ${weapon === "cannon" ? "blasted" : weapon === "pistol" ? "shot" : "cut down"} ${t.name}` +
       (t.keys ? " — the key dropped!" : "!"),
-  }));
+  });
+  return auto ? settle(said) : said;
 }
 
 // ── leaving ─────────────────────────────────────────────────────────────────
