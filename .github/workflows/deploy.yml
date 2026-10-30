@@ -1,0 +1,32 @@
+name: Deploy Game-PirateGame App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy on server
+        run: |
+          cd /srv/apps/Game-PirateGame
+          git fetch origin main
+          git reset --hard origin/main
+
+          export NVM_DIR="$HOME/.nvm"
+          source "$NVM_DIR/nvm.sh"
+
+          export $(grep -v '^#' .env.local | xargs)
+
+          rm -rf .next
+
+          npm ci
+          npm run build
+
+          pm2 restart Game-PirateGame
