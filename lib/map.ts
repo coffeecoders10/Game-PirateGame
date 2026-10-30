@@ -2,6 +2,7 @@
 // tile to the right). Only the treasure, keys and powerups are randomised (see rules.ts).
 // Tile index = row * COLS + col.
 //   #  land     .  water     H  harbour (land)     1-5  player spawn (land)
+// Harbours: exactly one on each island of 6+ tiles, none on smaller ones.
 //
 // The layout was generated once from a seeded blob generator and pasted in, so every
 // client sees exactly the same map. Edit the rows below to reshape the world.
@@ -11,26 +12,26 @@ export const ROWS = 20;
 export const TILE_COUNT = COLS * ROWS;
 
 const LAYOUT = [
-  "..1###......###H.",
-  ".H####.....#####3",
-  ".#####.....#####.",
-  ".####......#####.",
-  "...#..#.....##...",
-  "......###H.......",
-  "......####.......",
-  "..#...####.......",
-  "H###..#.##.......",
-  "###5##..#........",
-  "######...#...##H.",
-  "######..H##.#####",
-  ".##.#....##..####",
-  ".##.......#..####",
-  "...............#.",
-  "..##..#..#.......",
-  "..###.########...",
-  ".############H4..",
-  "..###.##H#..##...",
-  "..2#H.##.........",
+  "..1##.......###..",
+  ".H##.......###H3.",
+  ".##..........##..",
+  ".................",
+  "......#..........",
+  ".....###H........",
+  ".....###.........",
+  "..##5............",
+  "..##.......##....",
+  "..#......#H##....",
+  ".........##......",
+  ".................",
+  ".##..............",
+  ".###.......##....",
+  "..#H.....##H.#...",
+  ".................",
+  "..###........#...",
+  ".##H4.....##.....",
+  "..#.....#........",
+  "..2#.............",
 ];
 
 const cells = LAYOUT.join("");
@@ -139,4 +140,19 @@ export const GREEN_TILES: number[] = (() => {
     if (island++ % 2 === 1) green.push(...tiles);
   }
   return green;
+})();
+
+/** Land tiles on an island that has a harbour, so a pirate starting there can get a ship. */
+export const PORT_LAND: number[] = (() => {
+  const seen = new Set<number>();
+  const stack = [...HARBOURS];
+  for (const h of stack) seen.add(h);
+  while (stack.length) {
+    for (const n of neighbours(stack.pop()!)) {
+      if (!LAND[n] || seen.has(n)) continue;
+      seen.add(n);
+      stack.push(n);
+    }
+  }
+  return [...seen].filter((i) => !HARBOURS.includes(i)).sort((a, b) => a - b);
 })();

@@ -4,7 +4,7 @@
 //
 // Tunable gameplay numbers live at the top of this file.
 
-import { HARBOURS, SPAWNS, TILE_COUNT, dist, isLand, neighbours } from "./map";
+import { HARBOURS, PORT_LAND, SPAWNS, TILE_COUNT, dist, isLand, neighbours } from "./map";
 
 export const MAX_PLAYERS = 5;
 export const MIN_PLAYERS = 2;
@@ -17,23 +17,23 @@ export type ItemKind = Powerup | "key";
 export const RANGE: Record<Weapon, number> = { sword: 1, pistol: 2, cannon: 4 };
 /** Uses a freshly found item gives. Eyepatch charges are discounted steps. */
 export const CHARGES: Record<Powerup, number> = { sword: 3, pistol: 3, cannon: 2, eyepatch: 6 };
-/** Powerups scattered at game start. */
-const POWERUP_SPAWNS: Powerup[] = [
-  ...Array<Powerup>(5).fill("sword"),
-  ...Array<Powerup>(4).fill("pistol"),
-  ...Array<Powerup>(3).fill("cannon"),
-  ...Array<Powerup>(5).fill("eyepatch"),
+/** Powerups scattered at game start, scaled to the player count (17 at five players). */
+const powerupSpawns = (players: number): Powerup[] => [
+  ...Array<Powerup>(players).fill("sword"),
+  ...Array<Powerup>(Math.round(players * 0.8)).fill("pistol"),
+  ...Array<Powerup>(Math.round(players * 0.6)).fill("cannon"),
+  ...Array<Powerup>(players).fill("eyepatch"),
 ];
 /** Movement points spent by activating any powerup. */
 export const USE_COST = 1;
 
-/** One seat per player. The shape makes tokens readable without relying on colour alone. */
+/** One seat per player. Every token is the same round medallion; the colour tells them apart. */
 export const SEATS = [
-  { name: "Crimson", hex: "#e5534b", shape: "circle" },
-  { name: "Cobalt", hex: "#5b9bf0", shape: "square" },
-  { name: "Jade", hex: "#52b788", shape: "diamond" },
-  { name: "Violet", hex: "#a78bfa", shape: "triangle" },
-  { name: "Amber", hex: "#f59e42", shape: "hexagon" },
+  { name: "Crimson", hex: "#9b2c2f" },
+  { name: "Cobalt", hex: "#2d5d9c" },
+  { name: "Jade", hex: "#23765a" },
+  { name: "Violet", hex: "#63489f" },
+  { name: "Amber", hex: "#a8671b" },
 ] as const;
 
 export type Phase = "lobby" | "playing" | "finished";
@@ -44,6 +44,7 @@ export type Player = {
   name: string;
   color: number; // index into SEATS; also the spawn seat
   pos: number;
+  spawn: number; // where this pirate starts and wakes up after being hit; shuffled each game
   online: boolean;
   left: boolean; // quit mid-game; skipped forever
   ship: boolean;
@@ -91,8 +92,8 @@ export type Rng = () => number;
 
 const emptyInv = (): Inventory => ({ sword: 0, pistol: 0, cannon: 0, eyepatch: 0 });
 
-const newPlayer = (id: string, name: string, color: number): Player => ({
-  id, name, color, pos: SPAWNS[color], online: true, left: false,
+const newPlayer = (id: string, name: string, color: number, spawn = SPAWNS[color]): Player => ({
+  id, name, color, pos: spawn, spawn, online: true, left: false,
   ship: false, keys: 0, inv: emptyInv(), eyepatchOn: false, kills: 0,
 });
 
@@ -135,8 +136,8 @@ export function setPresence(s: GameState, present: ReadonlySet<string>): GameSta
 }
 
 /** Land tiles nothing sits on: no spawn, harbour, item or chest. */
-function freeLand(s: Pick<GameState, "items" | "chest">): number[] {
-  const used = new Set([...SPAWNS, ...HARBOURS, s.chest, ...s.items.map((i) => i.pos)]);
+function freeLand(s: Pick<GameState, "items" | "chest">, spawns: number[]): number[] {
+  const used = new Set([...spawns, ...HARBOURS, s.chest, ...s.items.map((i) => i.pos)]);
   return Array.from({ length: TILE_COUNT }, (_, i) => i).filter((i) => isLand(i) && !used.has(i));
 }
 
@@ -144,21 +145,28 @@ export function startGame(s: GameState, rng: Rng = Math.random): GameState {
   const ready = s.players.filter((p) => p.online);
   if (s.phase !== "lobby" || ready.length < MIN_PLAYERS) return s;
 
-  const players = ready.map((p) => newPlayer(p.id, p.name, p.color));
+  // Every game scatters the pirates over fresh harbour-island tiles, as far apart as the map allows.
+  const starts: number[] = [];
+  for (let n = 0; n < ready.length; n++) {
+    const open = PORT_LAND.filter((i) => !starts.includes(i));
+    const gap = [7, 6, 5, 4, 3, 2, 1].find((d) => open.some((i) => starts.every((t) => dist(t, i) >= d))) ?? 0;
+    starts.push(pick(open.filter((i) => starts.every((t) => dist(t, i) >= gap)), rng));
+  }
+  const players = ready.map((p, i) => newPlayer(p.id, p.name, p.color, starts[i]));
   // The chest goes on land, away from the harbours, as far from the starting spawns as the map allows
   // (tries 8 tiles away, then closer) so nobody starts next to it.
-  const spawns = players.map((p) => p.pos);
+  const spawns = starts;
   const candidates = Array.from({ length: TILE_COUNT }, (_, i) => i).filter(
-    (i) => isLand(i) && !HARBOURS.includes(i) && !SPAWNS.includes(i),
+    (i) => isLand(i) && !HARBOURS.includes(i) && !spawns.includes(i),
   );
   const tier = [8, 7, 6, 5, 4, 3, 2, 1].find((d) => candidates.some((i) => spawns.every((sp) => dist(sp, i) >= d))) ?? 0;
   const far = candidates.filter((i) => spawns.every((sp) => dist(sp, i) >= tier));
   const chest = pick(far, rng);
 
   const board: Pick<GameState, "items" | "chest"> = { chest, items: [] };
-  const kinds: ItemKind[] = [...Array<ItemKind>(players.length - 1).fill("key"), ...POWERUP_SPAWNS];
+  const kinds: ItemKind[] = [...Array<ItemKind>(players.length - 1).fill("key"), ...powerupSpawns(players.length)];
   for (const kind of kinds) {
-    const spot = pick(freeLand(board), rng);
+    const spot = pick(freeLand(board, spawns), rng);
     board.items = [...board.items, { pos: spot, kind }];
   }
   return {
@@ -358,7 +366,7 @@ export function attack(s: GameState, pid: string, weapon: Weapon, targetId: stri
   // where they fell, land or sea, so the key count stays N-1.
   const drops: Item[] = Array.from({ length: t.keys }, () => ({ pos: t.pos, kind: "key" }));
   const players = s.players.map((q) => {
-    if (q.id === targetId) return { ...newPlayer(q.id, q.name, q.color), online: q.online, kills: q.kills };
+    if (q.id === targetId) return { ...newPlayer(q.id, q.name, q.color, q.spawn), online: q.online, kills: q.kills };
     if (q.id === pid) return { ...q, inv: { ...q.inv, [weapon]: q.inv[weapon] - 1 }, kills: q.kills + 1 };
     return q;
   });

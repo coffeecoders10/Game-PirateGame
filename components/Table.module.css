@@ -12,7 +12,7 @@
 
 .layout { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .boardCol { display: grid; gap: 12px; min-width: 0; }
-.side { display: grid; gap: 22px; min-width: 0; align-content: start; }
+.side { display: grid; gap: 12px; min-width: 0; align-content: start; }
 
 .frame {
   position: relative;
@@ -20,7 +20,30 @@
   border-radius: 4px;
   overflow: hidden;
 }
-.zoom { position: absolute; right: 10px; bottom: 10px; background: rgba(10, 15, 20, 0.82); }
+/* The big die over the chart */
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(5, 9, 13, 0.82), rgba(5, 9, 13, 0.5) 70%, rgba(5, 9, 13, 0.18));
+  animation: fade 0.3s ease-out both;
+}
+.stage > button { pointer-events: none; }
+.stageLive { pointer-events: auto; background: radial-gradient(closest-side, rgba(5, 9, 13, 0.88), rgba(5, 9, 13, 0.6) 75%, rgba(5, 9, 13, 0.3)); }
+.stageLive > button:not(:disabled) { pointer-events: auto; filter: drop-shadow(0 0 22px rgba(214, 178, 94, 0.45)); }
+.stageText { margin: 0; display: grid; justify-items: center; text-align: center; font-family: var(--display); font-size: 1.7rem; line-height: 1.1; animation: rise-in 0.5s 0.05s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.stageText small { font-family: var(--ui); font-size: 0.95rem; color: var(--muted); }
+.stageText b { font-weight: 400; font-size: 3.4rem; color: var(--accent); animation: rise-in 0.45s 1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.stageText:has(b) small { animation: rise-in 0.4s 1.15s both; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px) scale(0.9); } }
+
+.frame .zoom { position: absolute; right: 10px; bottom: 10px; z-index: 3; width: 40px; min-height: 40px; padding: 0; background: rgba(10, 15, 20, 0.82); }
 
 /* Whose turn, in one glance */
 .banner { display: flex; align-items: center; gap: 12px; min-height: 48px; }
@@ -32,14 +55,16 @@
 .mp b { font-family: var(--display); font-weight: 400; font-size: 2.4rem; line-height: 1; color: var(--accent); }
 .mp span { font-size: 0.85rem; color: var(--muted); }
 
-.h { margin: 0 0 8px; font-family: var(--ui); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+.h { margin: 0 0 6px; font-family: var(--ui); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 
-.side > section { padding-top: 18px; border-top: 1px solid var(--line); }
+.side > section { padding-top: 12px; border-top: 1px solid var(--line); }
 .side > section:first-child { padding-top: 0; border-top: 0; }
 
-.roller { display: flex; align-items: center; gap: 16px; }
+.roller { display: flex; align-items: center; gap: 8px; }
 .rollerText { display: grid; gap: 10px; justify-items: start; }
 .rollerText p { margin: 0; }
+.rollerText .used { color: var(--muted); font-size: 0.9rem; }
+.rollerText .used b { font-family: var(--display); font-weight: 400; font-size: 1.5rem; line-height: 1; color: var(--accent); }
 
 /* Gear */
 .invHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -49,12 +74,12 @@
 .slots { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .slot {
   width: 100%;
-  min-height: 84px;
+  min-height: 68px;
   display: grid;
   justify-items: center;
   align-content: center;
   gap: 3px;
-  padding: 8px 2px;
+  padding: 6px 2px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--muted);
@@ -98,7 +123,7 @@
   grid-template-columns: auto 1fr;
   align-items: center;
   column-gap: 10px;
-  padding: 8px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--line);
 }
 .mate:last-child { border-bottom: 0; }
@@ -115,7 +140,7 @@
 .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .iconBtn { width: 38px; padding: 0; display: inline-grid; place-items: center; }
 .iconBtn:disabled { opacity: 0.35; cursor: not-allowed; }
-.moves { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
+.moves { margin: 0; padding-left: 20px; display: grid; gap: 2px; font-size: 0.85rem; color: var(--muted); }
 .moves li:last-child { color: var(--text); }
 
 /* Winner */
@@ -143,14 +168,17 @@
 .wait { font-style: italic; }
 @keyframes rise { from { transform: translate(-50%, -46%); opacity: 0; } }
 
+/* Desktop: the page never scrolls. The chart is sized to the window and the side panel scrolls itself if it must. */
 @media (min-width: 960px) {
-  .layout { grid-template-columns: auto 340px; justify-content: center; gap: 32px; }
-  .frame { width: max(440px, min(calc(100dvh - 180px), 860px)); }
-  .boardCol { position: sticky; top: 8px; }
+  .table { height: calc(100dvh - 32px); grid-template-rows: auto minmax(0, 1fr); }
+  .layout { grid-template-columns: auto 340px; justify-content: center; gap: 32px; min-height: 0; }
+  .frame { width: max(320px, min(calc(100dvh - 164px), 860px)); }
+  .side { max-height: 100%; overflow-y: auto; padding-right: 4px; }
 }
 @media (max-width: 420px) {
   .slotName { font-size: 0.78rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .modal { animation: none; }
+  .modal, .stage, .stageText, .stageText b, .stageText:has(b) small { animation: none; }
 }
+.more { list-style: none; margin-left: -20px; font-size: 0.8rem; }

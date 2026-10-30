@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { COAST_PATH } from "@/lib/coast";
-import { BOARD_H, BOARD_W, COLS, GREEN_TILES, HARBOURS, LAND, ROWS, SPAWNS, TILE_COUNT, TILE_W, dist, hexPath, tileCenter, tileName } from "@/lib/map";
+import { BOARD_H, BOARD_W, COLS, GREEN_TILES, HARBOURS, LAND, ROWS, TILE_COUNT, TILE_W, dist, hexPath, tileCenter, tileName } from "@/lib/map";
 import { isActive, SEATS, type GameState, type LogEntry } from "@/lib/rules";
-import { Glyph } from "./ItemIcon";
+import { Glyph, ItemDefs } from "./ItemIcon";
 import { TokenShape, initial } from "./Token";
 import styles from "./Board.module.css";
 
@@ -16,6 +16,7 @@ type Props = {
   view: View;
   steps: { to: number; cost: number }[]; // tiles the player can step to now
   range: number | null; // weapon radius being aimed (tints tiles)
+  ghost: number[] | null; // tiles your planned moves pass through; drawn as a see-through pirate
   targets: string[]; // pirates that can be hit with the selected weapon
   fx: LogEntry | null; // newest event worth animating
   onStep: (to: number) => void;
@@ -70,16 +71,37 @@ function useGlide(target: View): View {
 export const Chart = memo(function Chart({ labels = true }: { labels?: boolean }) {
   return (
     <>
-      <rect x={-50} y={-50} width={SIZE + 100} height={SIZE + 100} fill="var(--water)" />
+      <defs>
+        <radialGradient id="ch-water" gradientUnits="userSpaceOnUse" cx={SIZE * 0.5} cy={SIZE * 0.45} r={SIZE * 0.75}>
+          <stop offset="0" stopColor="#1b3a4a" />
+          <stop offset="0.55" stopColor="#12293a" />
+          <stop offset="1" stopColor="#0a1620" />
+        </radialGradient>
+        <linearGradient id="ch-land" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={SIZE} y2={SIZE}>
+          <stop offset="0" stopColor="#ddd5bd" />
+          <stop offset="0.5" stopColor="#cdc5ac" />
+          <stop offset="1" stopColor="#b7ae93" />
+        </linearGradient>
+        <linearGradient id="ch-grass" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={SIZE} y2={SIZE}>
+          <stop offset="0" stopColor="#a3c27e" />
+          <stop offset="0.55" stopColor="#82a863" />
+          <stop offset="1" stopColor="#5f8749" />
+        </linearGradient>
+      </defs>
+      <rect x={-50} y={-50} width={SIZE + 100} height={SIZE + 100} fill="url(#ch-water)" />
       <g fill="none" strokeLinejoin="round">
-        <path d={COAST_PATH} stroke="var(--sound-3)" strokeWidth={30} />
-        <path d={COAST_PATH} stroke="var(--sound-2)" strokeWidth={18} />
-        <path d={COAST_PATH} stroke="var(--sound-1)" strokeWidth={8} />
+        <path d={COAST_PATH} stroke="#5f9fb6" strokeOpacity={0.12} strokeWidth={9} />
+        <path d={COAST_PATH} stroke="#9fd2de" strokeOpacity={0.2} strokeWidth={2} />
       </g>
+      <path d={COAST_PATH} transform="translate(0.5 1)" fill="#04090d" fillOpacity={0.5} fillRule="evenodd" />
       <clipPath id="land"><path d={COAST_PATH} fillRule="evenodd" /></clipPath>
-      <path d={COAST_PATH} fill="var(--land)" fillRule="evenodd" stroke="var(--shore)" strokeWidth={0.5} strokeLinejoin="round" />
-      <g clipPath="url(#land)" fill="var(--grass)">
-        {GREEN_TILES.map((i) => <path key={i} d={hexPath(i, -0.05)} />)}
+      <path d={COAST_PATH} fill="url(#ch-land)" fillRule="evenodd" stroke="var(--shore)" strokeWidth={0.5} strokeLinejoin="round" />
+      <g clipPath="url(#land)">
+        <g fill="url(#ch-grass)">
+          {GREEN_TILES.map((i) => <path key={i} d={hexPath(i, -0.05)} />)}
+        </g>
+        <path d={COAST_PATH} fill="none" stroke="#f2ead2" strokeOpacity={0.45} strokeWidth={2} strokeLinejoin="round" />
+        <path d={COAST_PATH} fill="none" stroke="#5c5440" strokeOpacity={0.35} strokeWidth={0.5} strokeLinejoin="round" />
       </g>
       <g strokeWidth={0.25} fill="none" strokeLinejoin="round">
         <path stroke="#fff" strokeOpacity={0.05} d={ALL_HEXES} />
@@ -105,12 +127,12 @@ export const Chart = memo(function Chart({ labels = true }: { labels?: boolean }
   );
 });
 
+/** Gear sits straight on its tile: no frame, no shadow. */
 function Harbour({ i }: { i: number }) {
   const { x, y } = tileCenter(i);
   return (
-    <g transform={`translate(${x} ${y})`} color="var(--land)">
-      <circle r={3.6} fill="var(--panel)" stroke="var(--land)" strokeWidth={0.4} />
-      <g transform="translate(-2.4 -2.4) scale(0.2)"><Glyph name="anchor" width={1.8} /></g>
+    <g transform={`translate(${x} ${y})`}>
+      <g transform="translate(-3.6 -3.8) scale(0.3)"><Glyph name="anchor" /></g>
     </g>
   );
 }
@@ -118,24 +140,21 @@ function Harbour({ i }: { i: number }) {
 function Chest({ i }: { i: number }) {
   const { x, y } = tileCenter(i);
   return (
-    <g transform={`translate(${x} ${y})`} color="var(--accent)">
+    <g transform={`translate(${x} ${y})`}>
       <circle className={styles.beacon} r={4.6} fill="none" stroke="var(--accent)" strokeWidth={0.4} />
-      <circle r={4.4} fill="var(--panel)" stroke="var(--accent)" strokeWidth={0.7} />
-      <g transform="translate(-2.9 -3) scale(0.24)"><Glyph name="chest" width={1.8} /></g>
+      <g transform="translate(-4.3 -4.5) scale(0.36)"><Glyph name="chest" /></g>
     </g>
   );
 }
 
 function Marker({ kind, count }: { kind: GameState["items"][number]["kind"]; count: number }) {
-  const key = kind === "key";
   return (
-    <g color={key ? "var(--panel)" : "var(--text)"}>
-      <circle r={3.5} fill={key ? "var(--accent)" : "var(--panel)"} stroke={key ? "var(--panel)" : "var(--text)"} strokeWidth={0.4} />
-      <g transform="translate(-2.4 -2.4) scale(0.2)"><Glyph name={kind} width={1.9} /></g>
+    <g>
+      <g transform="translate(-3.9 -4) scale(0.325)"><Glyph name={kind} /></g>
       {count > 1 && (
-        <g transform="translate(3 -3)">
-          <circle r={1.7} fill="var(--text)" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={2.3} fontWeight={700} fill="var(--panel)">{count}</text>
+        <g transform="translate(3.4 -3.4)">
+          <circle r={1.7} fill="#1d1a16" stroke="#efe6cf" strokeWidth={0.25} />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={2.3} fontWeight={700} fill="#efe6cf">{count}</text>
         </g>
       )}
     </g>
@@ -172,11 +191,13 @@ function Effect({ fx }: { fx: LogEntry }) {
   );
 }
 
-export const Board = memo(function Board({ game, meId, view, steps, range, targets, fx, onStep, onTarget }: Props) {
+export const Board = memo(function Board({ game, meId, view, steps, range, ghost, targets, fx, onStep, onTarget }: Props) {
   const box = useGlide(view);
   const me = game.players.find((p) => p.id === meId);
   const seated = game.players.filter(isActive);
+  const tint = { "--tint": me ? SEATS[me.color].hex : "var(--accent)" } as CSSProperties;
   const aiming = range !== null && me;
+  const aimFrom = ghost ? ghost[ghost.length - 1] : me?.pos ?? 0;
 
   // Group pirates by tile so each one gets its own corner, and items so stacks show a count.
   const crowd = new Map<number, number>();
@@ -194,18 +215,18 @@ export const Board = memo(function Board({ game, meId, view, steps, range, targe
       role="group"
       aria-label={`Chart of ${COLS} by ${ROWS} hexagon tiles`}
     >
+      <ItemDefs />
       <Chart />
 
       {aiming &&
-        TILES.filter((i) => dist(i, me.pos) <= range && i !== me.pos).map((i) => (
+        TILES.filter((i) => dist(i, aimFrom) <= range && i !== aimFrom).map((i) => (
           <path key={i} d={hexPath(i)} fill="var(--accent)" opacity={0.12} pointerEvents="none" />
         ))}
 
       {HARBOURS.map((i) => <Harbour key={i} i={i} />)}
-      {SPAWNS.map((tile, seat) => {
-        if (!seated.some((p) => p.color === seat)) return null;
-        return <path key={seat} d={hexPath(tile, 0.6)} strokeLinejoin="round" fill={SEATS[seat].hex} fillOpacity={0.18} stroke={SEATS[seat].hex} strokeWidth={0.5} strokeDasharray="1.4 1" />;
-      })}
+      {seated.map((p) => (
+        <path key={p.id} d={hexPath(p.spawn, 0.6)} strokeLinejoin="round" fill={SEATS[p.color].hex} fillOpacity={0.3} stroke={SEATS[p.color].hex} strokeWidth={0.5} strokeDasharray="1.4 1" />
+      ))}
       {game.chest >= 0 && <Chest i={game.chest} />}
 
       {[...stacks.values()].map((s) => {
@@ -221,13 +242,10 @@ export const Board = memo(function Board({ game, meId, view, steps, range, targe
         const { x, y } = tileCenter(to);
         const go = () => onStep(to);
         return (
-          <g key={to} className={styles.hint} role="button" tabIndex={0} aria-label={`Move to ${tileName(to)}, costs ${costLabel(cost)}`} onClick={go} onKeyDown={press(go)}>
+          <g key={to} className={styles.hint} style={tint} role="button" tabIndex={0} aria-label={`Move to ${tileName(to)}, costs ${costLabel(cost)}`} onClick={go} onKeyDown={press(go)}>
             <path d={hexPath(to, 0.6)} className={styles.hintFill} />
             <path d={hexPath(to, 0.6)} className={styles.hintRing} />
-            <g transform={`translate(${x + 2.9} ${y - 2.9})`}>
-              <circle r={1.9} fill="var(--panel)" stroke="var(--accent)" strokeWidth={0.35} />
-              <text y={0.1} textAnchor="middle" dominantBaseline="central" fontSize={2.6} fontWeight={700} fill="var(--accent)">{costLabel(cost)}</text>
-            </g>
+            <circle className={styles.hintDot} cx={x} cy={y} r={1.3} />
           </g>
         );
       })}
@@ -255,22 +273,34 @@ export const Board = memo(function Board({ game, meId, view, steps, range, targe
             {hot && <circle className={styles.target} r={6.2} fill="var(--accent)" fillOpacity={0.18} stroke="var(--accent)" strokeWidth={0.7} />}
             {active && <circle className={styles.turnRing} r={5.4 * scale + 1} fill="none" stroke="var(--accent)" strokeWidth={0.6} />}
             {afloat && p.ship && (
-              <path d="M-5 1.6 H5 L3.1 4.4 H-3.1 Z" fill="var(--text)" stroke="var(--panel)" strokeWidth={0.4} strokeLinejoin="round" />
+              <path d="M-5 1.6 H5 L3.1 4.4 H-3.1 Z" fill="url(#gi-wood)" stroke="#2e1c0d" strokeWidth={0.4} strokeLinejoin="round" />
             )}
             {afloat && !p.ship && <path className={styles.swim} d="M-4 3.4 q1 -1 2 0 t2 0 t2 0 t2 0" fill="none" stroke="#fff" strokeWidth={0.5} strokeLinecap="round" />}
             <g transform={`translate(0 ${afloat && p.ship ? -1 : 0}) scale(${scale})`}>
               <TokenShape seat={p.color} letter={initial(p.name)} />
             </g>
-            {!afloat && p.ship && <path d="M3 4.4 H6.6 L5.8 5.8 H3.8 Z" fill="var(--text)" stroke="var(--panel)" strokeWidth={0.3} />}
+            {!afloat && p.ship && <path d="M3 4.4 H6.6 L5.8 5.8 H3.8 Z" fill="url(#gi-wood)" stroke="#2e1c0d" strokeWidth={0.3} />}
             {p.keys > 0 && (
-              <g transform="translate(3.4 -3.6)" color="var(--panel)">
-                <circle r={1.9} fill="var(--accent)" stroke="var(--panel)" strokeWidth={0.3} />
-                <g transform="translate(-1.2 -1.2) scale(0.1)"><Glyph name="key" width={2.6} /></g>
+              <g transform="translate(3.6 -3.6)">
+                <circle r={2} fill="url(#gi-disc)" stroke="#d6b25e" strokeWidth={0.35} />
+                <g transform="translate(-1.5 -1.5) scale(0.125)"><Glyph name="key" /></g>
               </g>
             )}
           </g>
         );
       })}
+
+      {me && ghost && ghost.length > 1 && (
+        <g pointerEvents="none">
+          <path
+            d={"M" + ghost.map((t) => { const c = tileCenter(t); return `${c.x.toFixed(2)} ${c.y.toFixed(2)}`; }).join("L")}
+            fill="none" stroke={SEATS[me.color].hex} strokeOpacity={0.7} strokeWidth={0.7} strokeDasharray="1.4 1.2" strokeLinecap="round" strokeLinejoin="round"
+          />
+          <g className={styles.pawn} style={{ transform: `translate(${tileCenter(ghost[ghost.length - 1]).x}px, ${tileCenter(ghost[ghost.length - 1]).y}px)` }} opacity={0.5}>
+            <g transform="scale(0.82)"><TokenShape seat={me.color} letter={initial(me.name)} /></g>
+          </g>
+        </g>
+      )}
 
       {fx && <Effect key={fx.n} fx={fx} />}
     </svg>

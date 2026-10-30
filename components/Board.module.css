@@ -36,11 +36,15 @@
 @keyframes breathe { 50% { opacity: 0.35; } }
 .target { animation: breathe 0.9s ease-in-out infinite; }
 
-/* Reachable tiles */
-.hint { cursor: pointer; outline: none; }
-.hintFill { fill: var(--accent); fill-opacity: 0.14; transition: fill-opacity 0.15s; }
-.hintRing { fill: none; stroke: var(--accent); stroke-width: 0.5; stroke-opacity: 0.8; }
-.hint:hover .hintFill, .hint:focus-visible .hintFill { fill-opacity: 0.4; }
+/* Reachable tiles, in the colour of the pirate who can step there */
+.hint { --lit: color-mix(in srgb, var(--tint) 55%, #fff); cursor: pointer; outline: none; }
+.hintFill { fill: var(--tint); fill-opacity: 0.38; transition: fill-opacity 0.2s; }
+.hintRing { fill: none; stroke: var(--lit); stroke-width: 0.5; stroke-opacity: 0.85; transition: stroke-width 0.2s; }
+.hintDot { fill: var(--lit); transform-box: fill-box; transform-origin: center; animation: sip 2s ease-in-out infinite; }
+@keyframes sip { 50% { transform: scale(1.4); opacity: 0.6; } }
+.hint:hover .hintFill, .hint:focus-visible .hintFill { fill-opacity: 0.65; }
+.hint:hover .hintRing { stroke-width: 0.9; stroke: #fff; }
+.hint:hover .hintDot { animation: none; }
 .hint:focus-visible .hintRing { stroke: #fff; stroke-width: 0.9; }
 
 /* One-shot effects */
@@ -54,6 +58,6 @@
 @keyframes impact { 0% { transform: scale(0.4); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise, .beacon, .swim, .turnRing, .target { animation: none; }
+  .rise, .beacon, .swim, .turnRing, .target, .hintDot { animation: none; }
   .pawn { transition-duration: 0.01s; }
 }

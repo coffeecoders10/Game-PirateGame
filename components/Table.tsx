@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { tileCenter, tileName } from "@/lib/map";
@@ -56,11 +56,11 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
   const [anim, setAnim] = useState<GameState | null>(null);
   const prev = useRef(live);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const before = prev.current;
     prev.current = live;
     const play = live.play;
-    if (!play || play.n === before.play?.n || play.by === meId) return;
+    if (!play || play.n === before.play?.n) return;
     if (before.phase !== "playing" || before.turn !== play.by || before.stage !== "move") return;
     const frames = play.actions.map((_, i) => applyActions(before, play.by, play.actions.slice(0, i + 1)));
     if (timer.current) clearInterval(timer.current);
@@ -77,7 +77,17 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
   }, [live, meId]);
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
   const game = anim ?? draft;
+  const shown = anim ?? live; // the shared chart; your plan only shows as a ghost on top of it
   const addAction = (a: Action) => setPlan({ key: planKey, list: [...actions, a] });
+
+  // The tiles the planned moves pass through, drawn as a see-through pirate on the shared chart.
+  const trail = useMemo(() => {
+    if (!liveMyTurn || !actions.length) return null;
+    const at = (g: GameState) => g.players.find((p) => p.id === meId)!.pos;
+    const pts = [at(live), ...actions.map((_, i) => at(applyActions(live, meId, actions.slice(0, i + 1))))];
+    const path = pts.filter((t, i) => i === 0 || t !== pts[i - 1]);
+    return path.length > 1 ? path : null;
+  }, [live, liveMyTurn, meId, actions]);
 
   const me = game.players.find((p) => p.id === meId);
   const byId = (id: string | null) => game.players.find((p) => p.id === id);
@@ -93,6 +103,24 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
     return () => clearTimeout(t);
   }, [pendingRoll]);
   const pending = pendingRoll === live.rolls;
+  const canRoll = myTurn && live.stage === "roll" && connected && !anim;
+
+  // Everyone watches the toss: the big die stays up while a fresh roll settles.
+  const [settling, setSettling] = useState(false);
+  const lastRolls = useRef(live.rolls);
+  useEffect(() => {
+    const fresh = live.rolls > lastRolls.current && live.dice !== null;
+    lastRolls.current = live.rolls;
+    if (!fresh) return;
+    setSettling(true);
+    const t = setTimeout(() => setSettling(false), 2400);
+    return () => clearTimeout(t);
+  }, [live.rolls, live.dice]);
+  const stageOpen = canRoll || pending || settling;
+  const doRoll = () => {
+    setPendingRoll(live.rolls);
+    onRoll();
+  };
 
   // Weapon being aimed. Drops away by itself when the turn or the weapon is gone.
   const [aimed, setAimed] = useState<Weapon | null>(null);
@@ -114,7 +142,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
 
   // Only animate events that happen after we arrived.
   const [seenN] = useState(live.n);
-  const last = game.log[game.log.length - 1];
+  const last = shown.log[shown.log.length - 1];
   const fx = last && last.n > seenN ? last : null;
 
   const attack = (id: string) => {
@@ -163,28 +191,31 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
             </div>
 
             <div className={styles.frame}>
-              <Board game={game} meId={meId} view={view} steps={steps} range={aim ? RANGE[aim] : null} targets={targets} fx={fx} onStep={(to) => addAction({ t: "step", to })} onTarget={attack} />
-              <button className={`btn ghost ${styles.zoom}`} aria-pressed={zoomed} onClick={() => setZoomed((z) => !z)}>
-                {zoomed ? "Show all" : "Zoom in"}
+              <Board game={shown} meId={meId} view={view} steps={steps} range={aim ? RANGE[aim] : null} ghost={trail} targets={targets} fx={fx} onStep={(to) => addAction({ t: "step", to })} onTarget={attack} />
+              {stageOpen && (
+                <div className={`${styles.stage} ${canRoll || pending ? styles.stageLive : ""}`}>
+                  <Dice value={live.dice} rolls={live.rolls} canRoll={canRoll} pending={pending} size={canRoll || pending ? 104 : 96} onRoll={doRoll} />
+                  <p className={styles.stageText} key={`${pending}-${settling}`}>
+                    {pending ? "Rolling…" : canRoll ? <>Your turn.<small>Tap the die to roll</small></> : <><b>{live.dice}</b><small>{turnPlayer?.name} rolled {live.dice} move{live.dice === 1 ? "" : "s"}</small></>}
+                  </p>
+                </div>
+              )}
+              <button className={`btn ghost ${styles.zoom}`} aria-pressed={zoomed} aria-label={zoomed ? "Show whole chart" : "Zoom in"} title={zoomed ? "Show whole chart" : "Zoom in"} onClick={() => setZoomed((z) => !z)}>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /><path d={zoomed ? "M7.5 10.5h6" : "M7.5 10.5h6M10.5 7.5v6"} />
+                </svg>
               </button>
             </div>
           </div>
 
           <aside className={styles.side}>
             <section className={styles.roller} aria-label="Dice">
-              <Dice
-                value={live.dice}
-                rolls={live.rolls}
-                canRoll={myTurn && live.stage === "roll" && connected && !anim}
-                pending={pending}
-                onRoll={() => {
-                  setPendingRoll(live.rolls);
-                  onRoll();
-                }}
-              />
+              <Dice value={live.dice} rolls={live.rolls} canRoll={canRoll} pending={pending} size={52} onRoll={doRoll} />
               <div className={styles.rollerText}>
                 <p>{live.dice ? `${turnPlayer?.name} rolled ${live.dice}` : "No roll yet"}</p>
                 {myTurn && live.stage === "move" && (
+                  <>
+                  <p className={styles.used} aria-live="polite"><b>{fmt((live.dice ?? 0) - game.mp)}</b> of {live.dice} moves used</p>
                   <div className={styles.confirm}>
                     <button className="btn teal" onClick={() => { setAimed(null); setPlan({ key: "", list: [] }); onConfirm(actions); }}>
                       Confirm{actions.length ? ` (${actions.length})` : ""}
@@ -196,6 +227,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
                       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
                     </button>
                   </div>
+                  </>
                 )}
               </div>
             </section>
@@ -204,8 +236,9 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
               <section aria-label="Your moves">
                 <h2 className={styles.h}>Your moves</h2>
                 <ol className={styles.moves}>
-                  {actions.map((a, i) => (
-                    <li key={i}>{describe(live, meId, actions, i)}</li>
+                  {actions.length > 3 && <li className={styles.more}>+{actions.length - 3} earlier</li>}
+                  {actions.map((a, i) => i >= actions.length - 3 && (
+                    <li key={i} value={i + 1}>{describe(live, meId, actions, i)}</li>
                   ))}
                 </ol>
               </section>
