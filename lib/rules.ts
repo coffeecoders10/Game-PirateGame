@@ -13,7 +13,7 @@ export type Weapon = "sword" | "pistol" | "cannon";
 export type Powerup = Weapon | "eyepatch";
 export type ItemKind = Powerup | "key";
 
-/** Tile radius each weapon reaches (diagonals count as 1). */
+/** Tile radius each weapon reaches (every neighbouring hexagon counts as 1). */
 export const RANGE: Record<Weapon, number> = { sword: 1, pistol: 2, cannon: 4 };
 /** Uses a freshly found item gives. Eyepatch charges are discounted steps. */
 export const CHARGES: Record<Powerup, number> = { sword: 3, pistol: 3, cannon: 2, eyepatch: 6 };

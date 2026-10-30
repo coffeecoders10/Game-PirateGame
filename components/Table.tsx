@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { colOf, rowOf, tileName } from "@/lib/map";
+import { tileCenter, tileName } from "@/lib/map";
 import {
   CHARGES, RANGE, USE_COST, applyActions, canUse, isActive, legalSteps, targetsFor,
   type Action, type GameState, type Player, type Powerup, type Weapon,
@@ -38,7 +38,8 @@ function closeUp(tile: number): View {
   const lo = FULL_VIEW.x;
   const hi = FULL_VIEW.x + FULL_VIEW.size - size;
   const clamp = (v: number) => Math.min(hi, Math.max(lo, v));
-  return { x: clamp(colOf(tile) * 10 + 5 - size / 2), y: clamp(rowOf(tile) * 10 + 5 - size / 2), size };
+  const { x, y } = tileCenter(tile);
+  return { x: clamp(x - size / 2), y: clamp(y - size / 2), size };
 }
 
 export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, onAgain, onLeave }: Props) {
@@ -106,7 +107,7 @@ export function Table({ game: live, meId, hostId, connected, onRoll, onConfirm, 
   const steps = useMemo(() => (myTurn && me && !aim && connected ? legalSteps(game, me) : []), [game, me, myTurn, aim, connected]);
   const targets = aim && me ? targetsFor(game, me, aim).map((p) => p.id) : [];
 
-  // Zoom: phones start close-up, because 20×20 tiles are tiny on a small screen.
+  // Zoom: phones start close-up, because the hexagon tiles are tiny on a small screen.
   const [zoomed, setZoomed] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
   const focus = (myTurn ? me : turnPlayer)?.pos ?? me?.pos ?? 0;
   const view = useMemo(() => (zoomed ? closeUp(focus) : FULL_VIEW), [zoomed, focus]);

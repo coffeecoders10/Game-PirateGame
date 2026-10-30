@@ -9,7 +9,7 @@ npm run dev   # http://localhost:3000 (the socket server only accepts localhost:
 
 ## How the game works
 
-- **Turn:** roll a d6 → that many movement points (MP). Tap a highlighted tile to step there (8 directions). Each tile shows its cost. The turn ends when you run out of MP, run out of moves, or press *End turn*.
+- **Turn:** roll a d6 → that many movement points (MP). Tap a highlighted tile to step there (6 directions, hexagon tiles). Each tile shows its cost. The turn ends when you run out of MP, run out of moves, or press *End turn*.
 - **Cost:** land 1, water 2 — or 1 with a ship. Visit any harbour to get a ship (kept until you are killed).
 - **Pick-ups:** keys and powerups are collected just by passing over them.
 - **Win:** step on the chest while carrying a key. There are always N−1 keys for N players.
@@ -21,10 +21,10 @@ All numbers are at the top of [lib/rules.ts](lib/rules.ts); the map is in [lib/m
 
 | Topic | Decision |
 | --- | --- |
-| Map | Fixed 20×20 chart of separate islands (coordinates A–T, 1–20), 9 harbours, 5 spawns (one per seat). Edit the `LAYOUT` rows to reshape it. Coastlines are drawn from the tile boundary, smoothed in [lib/coast.ts](lib/coast.ts); gameplay always uses the exact tile grid. |
+| Map | Fixed 17×20 hexagon chart of separate islands (coordinates A–Q, 1–20), 9 harbours, 5 spawns (one per seat). Edit the `LAYOUT` rows to reshape it. Coastlines are drawn from the tile boundary, smoothed in [lib/coast.ts](lib/coast.ts); gameplay always uses the exact tile grid. |
 | Random setup | Chest, N−1 keys and 17 powerups (5 swords, 4 pistols, 3 cannons, 5 eyepatches) are placed randomly on land away from spawns and harbours. The chest goes as far from the active spawns as the map allows. |
 | Chest | Visible from the start — the race is for the scarce keys. Reaching it without a key just tells you it's locked. |
-| Distance | Weapon "radius" and movement both use diagonal-friendly distance (a diagonal neighbour is 1 tile away). |
+| Distance | Weapon "radius" and movement both use hex distance (any of the 6 neighbouring tiles is 1 tile away). |
 | Eyepatch | Costs 1 MP once, then stays on. Halves costs: land 0.5, water 1, ship water 0.5 (shown as ½). Each discounted step uses a charge. |
 | First step | You can always take at least one step per turn even if you lack the MP (so a roll of 1 doesn't strand a swimmer). |
 | Combat | Hits always kill. The victim respawns at their spawn, losing ship, items and eyepatch. **Carried keys drop on the tile they died on, land or sea**; anyone passing over picks them up. |

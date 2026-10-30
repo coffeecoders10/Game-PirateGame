@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { COAST_PATH } from "@/lib/coast";
-import { GREEN_TILES, GRID, HARBOURS, LAND, SPAWNS, TILE_COUNT, colOf, dist, rowOf, tileCenter, tileName } from "@/lib/map";
+import { BOARD_H, BOARD_W, COLS, GREEN_TILES, HARBOURS, LAND, ROWS, SPAWNS, TILE_COUNT, TILE_W, dist, hexPath, tileCenter, tileName } from "@/lib/map";
 import { isActive, SEATS, type GameState, type LogEntry } from "@/lib/rules";
 import { Glyph } from "./ItemIcon";
 import { TokenShape, initial } from "./Token";
@@ -8,7 +8,7 @@ import styles from "./Board.module.css";
 
 export type View = { x: number; y: number; size: number };
 /** Whole chart including the coordinate margin. */
-export const FULL_VIEW: View = { x: -7, y: -7, size: GRID * 10 + 14 };
+export const FULL_VIEW: View = { x: -7, y: -7, size: Math.max(BOARD_W, BOARD_H) + 14 };
 
 type Props = {
   game: GameState;
@@ -22,10 +22,12 @@ type Props = {
   onTarget: (id: string) => void;
 };
 
-const SIZE = GRID * 10;
+const SIZE = Math.max(BOARD_W, BOARD_H);
 const TILES = Array.from({ length: TILE_COUNT }, (_, i) => i);
+const ALL_HEXES = TILES.map((i) => hexPath(i)).join("");
 const costLabel = (c: number) => (c === 0.5 ? "½" : String(c));
-const LETTERS = Array.from({ length: GRID }, (_, i) => String.fromCharCode(65 + i));
+const LETTERS = Array.from({ length: COLS }, (_, i) => String.fromCharCode(65 + i));
+const ROW_NUMBERS = Array.from({ length: ROWS }, (_, r) => r);
 
 /** Pirates sharing a tile stand in different corners of it. */
 const SLOTS = [{ x: -2.7, y: -2.2 }, { x: 2.7, y: -2.2 }, { x: -2.7, y: 2.8 }, { x: 2.7, y: 2.8 }, { x: 0, y: 0.3 }];
@@ -77,24 +79,24 @@ export const Chart = memo(function Chart({ labels = true }: { labels?: boolean }
       <clipPath id="land"><path d={COAST_PATH} fillRule="evenodd" /></clipPath>
       <path d={COAST_PATH} fill="var(--land)" fillRule="evenodd" stroke="var(--shore)" strokeWidth={0.5} strokeLinejoin="round" />
       <g clipPath="url(#land)" fill="var(--grass)">
-        {GREEN_TILES.map((i) => <rect key={i} x={colOf(i) * 10 - 0.05} y={rowOf(i) * 10 - 0.05} width={10.1} height={10.1} />)}
+        {GREEN_TILES.map((i) => <path key={i} d={hexPath(i, -0.05)} />)}
       </g>
-      <g strokeWidth={0.25}>
-        <path stroke="#fff" strokeOpacity={0.05} d={Array.from({ length: GRID + 1 }, (_, k) => `M${k * 10} 0V${SIZE}M0 ${k * 10}H${SIZE}`).join("")} />
-        <path stroke="#000" strokeOpacity={0.09} clipPath="url(#land)" d={Array.from({ length: GRID + 1 }, (_, k) => `M${k * 10} 0V${SIZE}M0 ${k * 10}H${SIZE}`).join("")} />
+      <g strokeWidth={0.25} fill="none" strokeLinejoin="round">
+        <path stroke="#fff" strokeOpacity={0.05} d={ALL_HEXES} />
+        <path stroke="#000" strokeOpacity={0.09} clipPath="url(#land)" d={ALL_HEXES} />
       </g>
       {labels && (
         <g className={styles.axis} textAnchor="middle" dominantBaseline="central">
           {LETTERS.map((l, c) => (
             <g key={l}>
-              <text x={c * 10 + 5} y={-3.5}>{l}</text>
-              <text x={c * 10 + 5} y={SIZE + 3.5}>{l}</text>
+              <text x={c * TILE_W + TILE_W / 2} y={-3.5}>{l}</text>
+              <text x={c * TILE_W + TILE_W / 2} y={BOARD_H + 3.5}>{l}</text>
             </g>
           ))}
-          {LETTERS.map((_, r) => (
+          {ROW_NUMBERS.map((r) => (
             <g key={r}>
-              <text x={-3.5} y={r * 10 + 5}>{r + 1}</text>
-              <text x={SIZE + 3.5} y={r * 10 + 5}>{r + 1}</text>
+              <text x={-3.5} y={tileCenter(r * COLS).y}>{r + 1}</text>
+              <text x={BOARD_W + 3.5} y={tileCenter(r * COLS).y}>{r + 1}</text>
             </g>
           ))}
         </g>
@@ -190,20 +192,19 @@ export const Board = memo(function Board({ game, meId, view, steps, range, targe
       viewBox={`${box.x} ${box.y} ${box.size} ${box.size}`}
       className={styles.svg}
       role="group"
-      aria-label={`Chart of ${GRID} by ${GRID} tiles`}
+      aria-label={`Chart of ${COLS} by ${ROWS} hexagon tiles`}
     >
       <Chart />
 
       {aiming &&
         TILES.filter((i) => dist(i, me.pos) <= range && i !== me.pos).map((i) => (
-          <rect key={i} x={colOf(i) * 10} y={rowOf(i) * 10} width={10} height={10} fill="var(--accent)" opacity={0.12} pointerEvents="none" />
+          <path key={i} d={hexPath(i)} fill="var(--accent)" opacity={0.12} pointerEvents="none" />
         ))}
 
       {HARBOURS.map((i) => <Harbour key={i} i={i} />)}
       {SPAWNS.map((tile, seat) => {
         if (!seated.some((p) => p.color === seat)) return null;
-        const { x, y } = tileCenter(tile);
-        return <rect key={seat} x={x - 4.4} y={y - 4.4} width={8.8} height={8.8} rx={1.6} fill={SEATS[seat].hex} fillOpacity={0.18} stroke={SEATS[seat].hex} strokeWidth={0.5} strokeDasharray="1.4 1" />;
+        return <path key={seat} d={hexPath(tile, 0.6)} strokeLinejoin="round" fill={SEATS[seat].hex} fillOpacity={0.18} stroke={SEATS[seat].hex} strokeWidth={0.5} strokeDasharray="1.4 1" />;
       })}
       {game.chest >= 0 && <Chest i={game.chest} />}
 
@@ -221,8 +222,8 @@ export const Board = memo(function Board({ game, meId, view, steps, range, targe
         const go = () => onStep(to);
         return (
           <g key={to} className={styles.hint} role="button" tabIndex={0} aria-label={`Move to ${tileName(to)}, costs ${costLabel(cost)}`} onClick={go} onKeyDown={press(go)}>
-            <rect x={colOf(to) * 10 + 0.6} y={rowOf(to) * 10 + 0.6} width={8.8} height={8.8} rx={1.4} className={styles.hintFill} />
-            <rect x={colOf(to) * 10 + 0.6} y={rowOf(to) * 10 + 0.6} width={8.8} height={8.8} rx={1.4} className={styles.hintRing} />
+            <path d={hexPath(to, 0.6)} className={styles.hintFill} />
+            <path d={hexPath(to, 0.6)} className={styles.hintRing} />
             <g transform={`translate(${x + 2.9} ${y - 2.9})`}>
               <circle r={1.9} fill="var(--panel)" stroke="var(--accent)" strokeWidth={0.35} />
               <text y={0.1} textAnchor="middle" dominantBaseline="central" fontSize={2.6} fontWeight={700} fill="var(--accent)">{costLabel(cost)}</text>

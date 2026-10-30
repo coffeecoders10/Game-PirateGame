@@ -1,46 +1,43 @@
 // Coastline geometry for the chart. The gameplay grid is exact; only the drawn shoreline is
-// organic: we trace the boundary of the land tiles, nudge it deterministically, then smooth it.
+// organic: we trace the boundary of the land hexes, nudge it deterministically, then smooth it.
 // Integer-only hashing keeps the result identical on every client.
 
-import { GRID, LAND } from "./map";
+import { LAND, TILE_COUNT, hexCorners, sideNeighbour } from "./map";
 
 type P = [number, number];
 
 const hash = (x: number, y: number, salt: number) => {
-  let h = Math.imul(x * 374761393 + y * 668265263 + salt * 1013904223, 1274126177);
+  let h = Math.imul(Math.round(x * 10) * 374761393 + Math.round(y * 10) * 668265263 + salt * 1013904223, 1274126177);
   h ^= h >>> 13;
   h = Math.imul(h, 1103515245);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
-const isLandAt = (r: number, c: number) => r >= 0 && c >= 0 && r < GRID && c < GRID && LAND[r * GRID + c];
+const key = ([x, y]: P) => `${x.toFixed(2)},${y.toFixed(2)}`;
 
-/** Closed loops of tile-corner points, land on the right-hand side of travel. */
+/** Closed loops of tile-corner points, land on the same side of travel throughout. */
 function traceLoops(): P[][] {
   const out = new Map<string, P[]>();
-  const add = (a: P, b: P) => {
-    const k = a.join(",");
-    if (!out.has(k)) out.set(k, []);
-    out.get(k)!.push(b);
-  };
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < GRID; c++) {
-      if (!LAND[r * GRID + c]) continue;
-      if (!isLandAt(r - 1, c)) add([c, r], [c + 1, r]);
-      if (!isLandAt(r, c + 1)) add([c + 1, r], [c + 1, r + 1]);
-      if (!isLandAt(r + 1, c)) add([c + 1, r + 1], [c, r + 1]);
-      if (!isLandAt(r, c - 1)) add([c, r + 1], [c, r]);
+  for (let i = 0; i < TILE_COUNT; i++) {
+    if (!LAND[i]) continue;
+    const corners = hexCorners(i);
+    for (let k = 0; k < 6; k++) {
+      const n = sideNeighbour(i, k);
+      if (n >= 0 && LAND[n]) continue;
+      const a = corners[k];
+      if (!out.has(key(a))) out.set(key(a), []);
+      out.get(key(a))!.push(corners[(k + 1) % 6]);
     }
   }
   const loops: P[][] = [];
-  for (const [key, ends] of out) {
+  for (const [k0, ends] of out) {
     while (ends.length) {
-      const start = key.split(",").map(Number) as P;
+      const start = k0.split(",").map(Number) as P;
       const pts: P[] = [start];
       let cur = ends.pop()!;
-      while (cur.join(",") !== key) {
+      while (key(cur) !== k0) {
         pts.push(cur);
-        cur = out.get(cur.join(","))!.pop()!;
+        cur = out.get(key(cur))!.pop()!;
       }
       loops.push(pts);
     }
@@ -55,7 +52,7 @@ function smooth(loop: P[]): P[] {
   for (let i = 0; i < n; i++) {
     const [ax, ay] = loop[i];
     const [bx, by] = loop[(i + 1) % n];
-    const a: P = [ax + (hash(ax, ay, 1) - 0.5) * 0.3, ay + (hash(ax, ay, 2) - 0.5) * 0.3];
+    const a: P = [ax + (hash(ax, ay, 1) - 0.5) * 2.5, ay + (hash(ax, ay, 2) - 0.5) * 2.5];
     const dx = bx - ax;
     const dy = by - ay;
     const bow = (hash(ax + bx, ay + by, 3) - 0.5) * 0.5;
@@ -75,7 +72,7 @@ function smooth(loop: P[]): P[] {
   return pts;
 }
 
-/** SVG path of every island's shoreline, in board units (10 per tile). Use fill-rule evenodd. */
+/** SVG path of every island's shoreline, in board units. Use fill-rule evenodd. */
 export const COAST_PATH = traceLoops()
-  .map((l) => "M" + smooth(l).map(([x, y]) => `${(x * 10).toFixed(1)} ${(y * 10).toFixed(1)}`).join("L") + "Z")
+  .map((l) => "M" + smooth(l).map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join("L") + "Z")
   .join("");
